@@ -1,5 +1,5 @@
 fcitx5/build/
-daemon-rs/target/
+daemon/target/
 __pycache__/
 *.py[cod]
 packaging/arch/src/

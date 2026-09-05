@@ -24,16 +24,16 @@ build() {
 
   SHERPA_ONNX_LIB_DIR="$srcdir/$_sherpa_archive/lib" \
   SHERPA_ONNX_RPATH=/usr/lib/parakeetd \
-    cargo build --manifest-path "$startdir/../../daemon-rs/Cargo.toml" --release --locked
+    cargo build --manifest-path "$startdir/../../daemon/Cargo.toml" --release --locked
 }
 
 package() {
   DESTDIR="$pkgdir" cmake --install fcitx-build
-  install -Dm755 "$startdir/../../daemon-rs/target/release/parakeetd" "$pkgdir/usr/bin/parakeetd"
-  install -Dm755 "$startdir/../../daemon-rs/target/release/parakeet-ctl" "$pkgdir/usr/bin/parakeet-ctl"
+  install -Dm755 "$startdir/../../daemon/target/release/parakeetd" "$pkgdir/usr/bin/parakeetd"
+  install -Dm755 "$startdir/../../daemon/target/release/parakeet-ctl" "$pkgdir/usr/bin/parakeet-ctl"
   install -Dm755 -t "$pkgdir/usr/lib/parakeetd" "$srcdir/$_sherpa_archive/lib/"*.so
   install -Dm644 -t "$pkgdir/usr/lib/systemd/user" "$startdir/../../systemd/parakeetd.service" \
     "$startdir/../../systemd/parakeetd.socket"
-  install -Dm644 "$startdir/../../daemon-rs/config.example.toml" \
+  install -Dm644 "$startdir/../../daemon/config.example.toml" \
     "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
 }
