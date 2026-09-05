@@ -1,0 +1,7 @@
+[InputMethod]
+Name=Parakeet Voice (Japanese)
+Icon=fcitx-parakeet-ja
+Label=声
+LangCode=ja
+Addon=parakeet
+Configurable=True

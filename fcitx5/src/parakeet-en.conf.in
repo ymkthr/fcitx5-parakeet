@@ -1,0 +1,7 @@
+[InputMethod]
+Name=Parakeet Voice (English)
+Icon=fcitx-parakeet-en
+Label=Vo
+LangCode=en
+Addon=parakeet
+Configurable=True

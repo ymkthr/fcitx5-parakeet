@@ -1,0 +1,9 @@
+[Addon]
+Name=Parakeet Voice Input
+Comment=Speech-to-text input via NVIDIA Parakeet (sherpa-onnx)
+Category=InputMethod
+Library=parakeet
+Type=SharedLibrary
+OnDemand=True
+Configurable=True
+Version=0.1.0

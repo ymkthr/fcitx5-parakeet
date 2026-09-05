@@ -1,0 +1,9 @@
+[Unit]
+Description=Parakeet speech-to-text daemon socket
+
+[Socket]
+ListenStream=%t/parakeetd.sock
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target

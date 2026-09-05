@@ -1,0 +1,39 @@
+# Local build from the repository: run `makepkg -si` in this directory.
+pkgname=fcitx5-parakeet
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet"
+arch=(x86_64)
+url="https://github.com/katsuhiro/fcitx5-parakeet"
+license=(MIT)
+options=(!debug)
+depends=(fcitx5 hicolor-icon-theme pipewire)
+makedepends=(cargo clang cmake extra-cmake-modules gettext)
+
+_sherpa_version=1.13.7
+_sherpa_archive="sherpa-onnx-v${_sherpa_version}-linux-x64-shared-no-tts"
+source=("${_sherpa_archive}.tar.bz2::https://github.com/k2-fsa/sherpa-onnx/releases/download/v${_sherpa_version}/${_sherpa_archive}.tar.bz2")
+sha256sums=('e5abe50fae5e25ad6b70bc74b51984ccea77df2571f211833b572fcc0d1c3bef')
+
+build() {
+  cmake -S "$startdir/../../fcitx5" -B fcitx-build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DBUILD_TESTING=OFF
+  cmake --build fcitx-build
+
+  SHERPA_ONNX_LIB_DIR="$srcdir/$_sherpa_archive/lib" \
+  SHERPA_ONNX_RPATH=/usr/lib/parakeetd \
+    cargo build --manifest-path "$startdir/../../daemon-rs/Cargo.toml" --release --locked
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install fcitx-build
+  install -Dm755 "$startdir/../../daemon-rs/target/release/parakeetd" "$pkgdir/usr/bin/parakeetd"
+  install -Dm755 "$startdir/../../daemon-rs/target/release/parakeet-ctl" "$pkgdir/usr/bin/parakeet-ctl"
+  install -Dm755 -t "$pkgdir/usr/lib/parakeetd" "$srcdir/$_sherpa_archive/lib/"*.so
+  install -Dm644 -t "$pkgdir/usr/lib/systemd/user" "$startdir/../../systemd/parakeetd.service" \
+    "$startdir/../../systemd/parakeetd.socket"
+  install -Dm644 "$startdir/../../daemon-rs/config.example.toml" \
+    "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
+}

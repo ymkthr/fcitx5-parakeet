@@ -1,0 +1,39 @@
+# parakeetd settings: copy to ~/.config/parakeetd/config.toml (every key is optional).
+
+# Unix socket. Leave unset when started through systemd (parakeetd.socket owns it).
+# socket_path = "/run/user/1000/parakeetd.sock"
+
+# PipeWire source node name. Unset = the session's default source.
+# target = "alsa_input.usb-R__DE_Microphones_R__DE_NT-USB_Mini_58311147-00.mono-fallback"
+
+# Hard stop for a single capture, in seconds.
+# max_seconds = 120
+
+# Models to load at start-up. Loading takes about 2 s per model.
+# preload = ["ja", "en"]
+
+# Decode silence once after loading to avoid first-request runtime warm-up.
+# warmup = true
+
+# Silero VAD drops captures without speech instead of letting a model invent
+# fillers such as "うん" from room noise. An empty string disables it.
+# vad_model = "~/.local/share/parakeetd/models/silero_vad.onnx"
+
+[models.ja]
+dir = "~/.local/share/parakeetd/models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8"
+# kind = "nemo_ctc"
+num_threads = 4
+# provider = "cpu"
+
+[models.en]
+dir = "~/.local/share/parakeetd/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+# kind = "nemo_transducer"
+num_threads = 4
+# provider = "cpu"
+
+# "auto" decodes with both models. English wins when its mean token log
+# probability reaches the threshold; otherwise the Japanese result is used.
+[auto]
+detector = "en"
+fallback = "ja"
+threshold = -0.35
