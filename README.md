@@ -1,5 +1,7 @@
 # fcitx5-parakeet
 
+[日本語](README.md) | [English](README.en.md)
+
 fcitx5からNVIDIA Parakeetを使う、ローカル音声入力です。
 日本語、英語、日英自動判別の入力メソッドを提供します。
 
