@@ -1,6 +1,6 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: fcitx5-parakeet 0.1.0\n"
+"Project-Id-Version: fcitx5-parakeet 0.3.0\n"
 "Language: ja\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
@@ -12,32 +12,8 @@ msgid "Parakeet Voice Input"
 msgstr "Parakeet 音声入力"
 
 #: src/parakeet-addon.conf.in
-msgid "Speech-to-text input via NVIDIA Parakeet (sherpa-onnx)"
-msgstr "NVIDIA Parakeet (sherpa-onnx) による音声入力"
-
-#: src/parakeet-ja.conf.in
-msgid "Parakeet Voice (Japanese)"
-msgstr "Parakeet 音声入力（日本語）"
-
-#: src/parakeet-en.conf.in
-msgid "Parakeet Voice (English)"
-msgstr "Parakeet 音声入力（英語）"
-
-#: src/parakeet-auto.conf.in
-msgid "Parakeet Voice (Auto, Japanese/English)"
-msgstr "Parakeet 音声入力（自動・日英）"
-
-#: src/parakeet.h
-msgid "Push to talk"
-msgstr "プッシュトゥトーク（押している間だけ録音）"
-
-#: src/parakeet.h
-msgid "Toggle"
-msgstr "トグル（押して開始、再度押して終了）"
-
-#: src/parakeet.h
-msgid "Trigger mode"
-msgstr "録音の開始方法"
+msgid "Push-to-talk speech input via NVIDIA Parakeet (sherpa-onnx)"
+msgstr "NVIDIA Parakeet (sherpa-onnx) によるプッシュトゥトーク音声入力"
 
 #: src/parakeet.h
 msgid "Trigger key"
@@ -48,8 +24,12 @@ msgid "Cancel key (while recording)"
 msgstr "キャンセルキー（録音中）"
 
 #: src/parakeet.h
-msgid "Push to talk: a press shorter than this (ms) types the key instead"
-msgstr "プッシュトゥトーク: これより短い押下 (ms) は通常のキー入力として扱う"
+msgid "Tap threshold (ms): a shorter press locks the recording, a longer press records while held"
+msgstr "タップ判定 (ms): これより短い押下は録音を続け、長い押下は押している間だけ録音する"
+
+#: src/parakeet.h
+msgid "Language sent to parakeetd (auto, ja or en)"
+msgstr "parakeetd に渡す言語（auto、ja、en）"
 
 #: src/parakeet.h
 msgid "parakeetd socket (empty: $XDG_RUNTIME_DIR/parakeetd.sock)"
@@ -62,14 +42,6 @@ msgstr "カーソル付近に録音状態を表示する"
 #: src/parakeet.cpp
 msgid "parakeetd is not running"
 msgstr "parakeetd が起動していません"
-
-#: src/parakeet.cpp
-msgid "Listening"
-msgstr "録音中"
-
-#: src/parakeet.cpp
-msgid "Transcribing"
-msgstr "認識中"
 
 #: src/parakeet.cpp
 msgid "Parakeet: "

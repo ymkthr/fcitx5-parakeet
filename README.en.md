@@ -3,7 +3,8 @@
 [日本語](README.md) | English
 
 fcitx5-parakeet provides local voice input for fcitx5 using NVIDIA Parakeet.
-It supports Japanese, English, and automatic Japanese/English detection.
+It runs as a module that stays loaded in fcitx5 and starts dictation the moment you press a trigger key.
+It never switches the input method itself.
 
 ## Installation
 
@@ -19,17 +20,13 @@ The installer performs the following steps:
 1. Builds and installs the Rust daemon and fcitx5 addon.
 2. Downloads the Japanese, English, and Silero VAD models.
 3. Enables the systemd user socket.
-4. Adds the Parakeet input methods to the current fcitx5 input method group.
+4. Restarts fcitx5, if it is running, so the new module loads.
 
 The build requires `base-devel`, `cargo`, `clang`, `cmake`, `extra-cmake-modules`, and `gettext`.
 `makepkg` prompts to install missing packages.
 The speech recognition models are stored in `~/.local/share/parakeetd/models/`.
 
-If fcitx5 was not running during installation, start it and register the input methods manually.
-
-```sh
-python3 scripts/fcitx5-register.py
-```
+If fcitx5 was not running during installation, start it manually.
 
 Verify the connection to the daemon after installation.
 
@@ -40,39 +37,60 @@ parakeet-ctl status
 
 ## Usage
 
-1. Select “Parakeet Voice” with the fcitx5 input method switch key.
-2. Press and hold Space.
-3. Start speaking when `🎙️` appears near the cursor.
-4. Release Space to transcribe the recording and insert the result at the cursor.
+The default trigger key is `Menu`.
+Remapping CapsLock to Menu is recommended.
+On Wayland fcitx5 cannot turn the caps-lock state back off, so the key must be remapped rather than intercepted.
 
-Pressing Space for less than 250 milliseconds inserts a normal space without recording.
+On GNOME, run:
+
+```sh
+gsettings set org.gnome.desktop.input-sources xkb-options "['caps:menu']"
+```
+
+This takes effect immediately.
+If xkb-options already has entries, add `caps:menu` to the list instead of replacing it.
+
+On other X11 desktops, run:
+
+```sh
+setxkbmap -option caps:menu
+```
+
+On KDE, open System Settings, go to Keyboard, then Key Bindings, then Caps Lock behavior, and choose "Make Caps Lock an additional Menu key".
+
+Tapping the trigger key (shorter than 250 milliseconds) starts recording and keeps it on.
+Tap again to stop recording; the transcript is inserted at the cursor.
+
+Holding the trigger key records while it is held down.
+Releasing it stops recording; the transcript is inserted at the cursor.
+
+`🎙️` appears near the cursor while recording.
+`…` appears while the recording is being transcribed.
+
 Press Escape while recording to cancel.
-All keys other than Space and Escape continue to work normally.
+All other keys continue to work normally in the current input method, so you can edit right after dictating.
 
-Choose an input method according to the recognition language.
+The trigger does not start dictation while the input method has uncommitted composition text.
 
-| Input method | Recognition language |
-| --- | --- |
-| Parakeet Voice (Auto, Japanese/English) | Detects Japanese or English automatically |
-| Parakeet Voice (Japanese) | Japanese |
-| Parakeet Voice (English) | English |
+The recognition language defaults to `auto`.
+Both Japanese and English are recognized, and the daemon picks the language.
+You can also pin it to `ja` or `en` in the configuration.
 
-Use “Auto, Japanese/English” for normal use.
-Switch to the Japanese or English input method when you need to fix the recognition language.
+The first dictation after login can take a few seconds longer, because the daemon loads its models on first use.
 
 ## Configuration
 
-Open the Parakeet input method settings in `fcitx5-configtool`.
+Open `fcitx5-configtool`, go to Addons, and select "Parakeet Voice Input" to configure it.
 The settings are stored in `~/.config/fcitx5/conf/parakeet.conf`.
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| Recording mode | Push to talk | Select Toggle to start and stop recording with separate Space presses |
-| Trigger key | Space | Starts and stops recording |
-| Cancel key | Escape | Cancels the current recording |
-| TapThresholdMs | 250 | Maximum press duration treated as normal key input |
+| TriggerKey | Menu | Starts and stops recording |
+| CancelKey | Escape | Cancels the current recording |
+| TapThresholdMs | 250 | Presses shorter than this lock the recording on; longer presses record only while held |
+| Language | auto | auto, ja, or en |
 | SocketPath | Empty | Uses `$XDG_RUNTIME_DIR/parakeetd.sock` when empty |
-| ShowStatus | True | Shows the recording state near the cursor |
+| ShowStatus | True | Shows `🎙️` or `…` near the cursor |
 
 To use a different microphone, create `~/.config/parakeetd/config.toml` and specify its PipeWire source name.
 See `daemon/config.example.toml` for the complete configuration example.

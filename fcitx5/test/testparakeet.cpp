@@ -1,37 +1,39 @@
 /*
  * SPDX-License-Identifier: MIT
  *
- * Drives the parakeet engine through fcitx5's test frontend against a live
- * parakeetd. Verifies:
- *   1. a quick tap of the trigger types the key itself,
- *   2. unrelated keys are not swallowed,
- *   3. holding the trigger dictates: the transcript is committed on release.
+ * Drives the parakeet module through fcitx5's test frontend against a live
+ * parakeetd while the plain keyboard input method is active. Verifies:
+ *   1. unrelated keys are not swallowed,
+ *   2. holding the trigger dictates: the transcript is committed on release,
+ *   3. a tap locks the recording until the next press.
  *
  * Environment:
  *   PARAKEET_TEST_SOCKET  parakeetd socket (unset -> test skipped, exit 77)
  *   PARAKEET_TEST_WAV     wav played into PARAKEET_TEST_SINK while holding
  *   PARAKEET_TEST_SINK    PipeWire sink whose monitor parakeetd captures
  *   PARAKEET_TEST_EXPECT  exact transcript to require (optional; any commit otherwise)
- *   PARAKEET_TEST_LANG    input method language, ja or en (default en)
  *   PARAKEET_TEST_HOLD_SEC seconds to hold the trigger while the wav plays (default 8)
  */
 #include <chrono>
 #include <cstdlib>
+#include <functional>
+#include <memory>
 #include <string>
+#include <vector>
 
 #include <spawn.h>
 #include <sys/wait.h>
 
 #include <fcitx-config/rawconfig.h>
-#include <fcitx-utils/eventdispatcher.h>
 #include <fcitx-utils/event.h>
+#include <fcitx-utils/eventdispatcher.h>
 #include <fcitx-utils/log.h>
 #include <fcitx-utils/testing.h>
 #include <fcitx/addonmanager.h>
 #include <fcitx/event.h>
 #include <fcitx/inputcontextmanager.h>
-#include <fcitx/inputpanel.h>
 #include <fcitx/inputmethodmanager.h>
+#include <fcitx/inputpanel.h>
 #include <fcitx/instance.h>
 #include <testfrontend_public.h>
 
@@ -42,6 +44,7 @@ extern char **environ;
 namespace {
 
 constexpr uint64_t kUsec = 1000 * 1000;
+const Key kTrigger("Menu");
 
 std::string envOr(const char *name, const char *fallback) {
     const char *value = std::getenv(name);
@@ -71,7 +74,6 @@ int main() {
     // across capture offsets, but a played wav must always produce a commit.
     const std::string expect = envOr("PARAKEET_TEST_EXPECT", "");
     const bool expectCommit = !wav.empty() && !sink.empty();
-    const std::string im = "parakeet-" + envOr("PARAKEET_TEST_LANG", "en");
 
     setupTestingEnvironment(TESTING_BINARY_DIR, {"src"}, {"test"});
     char arg0[] = "testparakeet";
@@ -93,35 +95,108 @@ int main() {
     int commits = 0;
     std::string lastCommit;
     std::unique_ptr<HandlerTableEntry<EventHandler>> commitWatcher;
-    std::unique_ptr<EventSourceTime> playTimer;
-    std::unique_ptr<EventSourceTime> releaseTimer;
-    std::unique_ptr<EventSourceTime> deadline;
+    std::vector<std::unique_ptr<EventSourceTime>> timers;
     pid_t player = 0;
+
+    auto after = [&](uint64_t usec, std::function<void()> fn) {
+        timers.push_back(
+            instance.eventLoop().addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + usec, 0,
+                                              [fn = std::move(fn)](EventSourceTime *source, uint64_t) {
+                                                  source->setEnabled(false);
+                                                  fn();
+                                                  return true;
+                                              }));
+    };
+    auto press = [&](const Key &key) { testfrontend->call<ITestFrontend::keyEvent>(uuid, key, false); };
+    auto release = [&](const Key &key) { testfrontend->call<ITestFrontend::keyEvent>(uuid, key, true); };
+    auto aux = [&]() { return ic->inputPanel().auxUp().toString(); };
+
+    // 3. Tap: press and release at once, the recording keeps running (locked)
+    //    and other keys still reach the application; the next press ends it.
+    //    Silence is played, so nothing may be committed.
+    auto tapPhase = [&]() {
+        const int before = commits;
+        press(kTrigger);
+        release(kTrigger);
+        FCITX_ASSERT(aux().empty()) << aux();
+        after(kUsec + kUsec / 2, [&, before]() {
+            FCITX_ASSERT(aux() == "🎙️") << "tap did not lock the recording: " << aux();
+            FCITX_ASSERT(!testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, Key("Control+c"), false));
+            FCITX_ASSERT(aux() == "🎙️") << aux();
+            FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, kTrigger, false));
+            FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, kTrigger, true));
+            after(3 * kUsec, [&, before]() {
+                FCITX_ASSERT(commits == before) << "silence must not commit anything";
+                FCITX_ASSERT(aux().empty()) << aux();
+                instance.exit();
+            });
+        });
+    };
+
+    // 1. Unrelated keys pass through (not accepted by the module).
+    // 2. Hold to dictate. Auto-repeat presses must be swallowed, and the
+    //    toolkit-style reset() apps issue on cursor moves must not cancel.
+    auto holdPhase = [&]() {
+        FCITX_ASSERT(aux().empty()) << aux();
+        FCITX_ASSERT(!testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, Key("Control+c"), false));
+        FCITX_ASSERT(!testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, Key("Control+c"), true));
+        FCITX_ASSERT(commits == 0);
+
+        press(kTrigger);
+        FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, kTrigger, false));
+        ic->reset();
+        // Nothing is shown until parakeetd confirms samples are flowing.
+        FCITX_ASSERT(aux().empty()) << aux();
+
+        uint64_t holdUsec = 1 * kUsec;
+        if (expectCommit) {
+            // Let the capture stream become live before playback starts, as a
+            // person naturally pauses between pressing the key and speaking.
+            after(kUsec / 2, [&]() { player = play(sink, wav); });
+            holdUsec = static_cast<uint64_t>(std::stod(envOr("PARAKEET_TEST_HOLD_SEC", "8")) * kUsec);
+        }
+        after(holdUsec, [&]() {
+            FCITX_ASSERT(aux() == "🎙️") << "recording never went live: " << aux();
+            release(kTrigger);
+        });
+        after(holdUsec + 15 * kUsec, [&]() {
+            if (expectCommit) {
+                FCITX_ASSERT(commits == 1) << "transcript was never committed";
+                FCITX_ASSERT(!lastCommit.empty());
+                if (!expect.empty()) {
+                    FCITX_ASSERT(lastCommit == expect) << lastCommit;
+                }
+            } else {
+                FCITX_ASSERT(commits == 0) << "silence must not commit anything";
+            }
+            FCITX_ASSERT(aux().empty()) << aux();
+            tapPhase();
+        });
+    };
 
     dispatcher.schedule([&]() {
         testfrontend = instance.addonManager().addon("testfrontend");
         FCITX_ASSERT(testfrontend);
-        auto *engine = instance.addonManager().addon("parakeet", true);
-        FCITX_ASSERT(engine) << "parakeet addon did not load";
+        auto *module = instance.addonManager().addon("parakeet", true);
+        FCITX_ASSERT(module) << "parakeet addon did not load";
 
         RawConfig raw;
         raw.setValueByPath("SocketPath", socketPath);
         raw.setValueByPath("TapThresholdMs", "250");
-        engine->setConfig(raw);
+        raw.setValueByPath("Language", envOr("PARAKEET_TEST_LANG", "auto"));
+        module->setConfig(raw);
 
         auto group = instance.inputMethodManager().currentGroup();
         group.inputMethodList().clear();
         group.inputMethodList().emplace_back("keyboard-us");
-        group.inputMethodList().emplace_back(im);
-        group.setDefaultInputMethod(im);
+        group.setDefaultInputMethod("keyboard-us");
         instance.inputMethodManager().setGroup(std::move(group));
 
         uuid = testfrontend->call<ITestFrontend::createInputContext>("testapp");
         ic = instance.inputContextManager().findByUUID(uuid);
         FCITX_ASSERT(ic);
         ic->focusIn();
-        instance.setCurrentInputMethod(ic, im, false);
-        FCITX_ASSERT(instance.inputMethod(ic) == im) << instance.inputMethod(ic);
+        FCITX_ASSERT(instance.inputMethod(ic) == "keyboard-us") << instance.inputMethod(ic);
 
         commitWatcher = instance.watchEvent(EventType::InputContextCommitString, EventWatcherPhase::Default,
                                             [&](Event &event) {
@@ -129,63 +204,11 @@ int main() {
                                                 FCITX_INFO() << "observed commit: " << commit.text();
                                                 ++commits;
                                                 lastCommit = commit.text();
-                                                if (expectCommit && commits == 2) {
-                                                    FCITX_ASSERT(!lastCommit.empty());
-                                                    if (!expect.empty()) {
-                                                        FCITX_ASSERT(lastCommit == expect) << lastCommit;
-                                                    }
-                                                    instance.exit();
-                                                }
                                             });
 
-        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
-        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), true);
-        FCITX_ASSERT(commits == 1 && lastCommit == " ") << "tap did not type a space";
-
-        FCITX_ASSERT(!testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, Key("a"), false));
-        FCITX_ASSERT(!testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, Key("a"), true));
-        FCITX_ASSERT(!testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, Key("Control+c"), false));
-        FCITX_ASSERT(commits == 1);
-
-        // 3. Hold to dictate. Auto-repeat presses must be swallowed, and the
-        //    toolkit-style reset() apps issue on cursor moves must not cancel.
-        testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), false);
-        FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, Key("space"), false));
-        ic->reset();
-        FCITX_ASSERT(commits == 1);
-        // Nothing is shown until parakeetd confirms samples are flowing.
-        FCITX_ASSERT(ic->inputPanel().auxUp().toString().empty()) << ic->inputPanel().auxUp().toString();
-
-        uint64_t holdUsec = 1 * kUsec;
-        if (!wav.empty() && !sink.empty()) {
-            // Let the capture stream become live before playback starts, as a
-            // person naturally pauses between pressing the key and speaking.
-            playTimer = instance.eventLoop().addTimeEvent(
-                CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + kUsec / 2, 0, [&](EventSourceTime *source, uint64_t) {
-                    source->setEnabled(false);
-                    player = play(sink, wav);
-                    return true;
-                });
-            holdUsec = static_cast<uint64_t>(std::stod(envOr("PARAKEET_TEST_HOLD_SEC", "8")) * kUsec);
-        }
-        releaseTimer = instance.eventLoop().addTimeEvent(
-            CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + holdUsec, 0, [&](EventSourceTime *source, uint64_t) {
-                source->setEnabled(false);
-                FCITX_ASSERT(instance.inputMethodIcon(ic) == "fcitx-parakeet-recording")
-                    << instance.inputMethodIcon(ic);
-                testfrontend->call<ITestFrontend::keyEvent>(uuid, Key("space"), true);
-                return true;
-            });
-        deadline = instance.eventLoop().addTimeEvent(
-            CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + holdUsec + 15 * kUsec, 0, [&](EventSourceTime *, uint64_t) {
-                if (expectCommit) {
-                    FCITX_ASSERT(commits == 2) << "transcript was never committed";
-                } else {
-                    FCITX_ASSERT(commits == 1) << "silence must not commit anything";
-                }
-                instance.exit();
-                return true;
-            });
+        // fcitx5 shows the input method name near the cursor for a second
+        // after the group change; let it fade so the aux line is ours.
+        after(kUsec * 3 / 2, [&]() { holdPhase(); });
     });
 
     instance.exec();

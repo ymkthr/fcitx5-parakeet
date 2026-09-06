@@ -1,9 +1,9 @@
 [Addon]
 Name=Parakeet Voice Input
-Comment=Speech-to-text input via NVIDIA Parakeet (sherpa-onnx)
-Category=InputMethod
+Comment=Push-to-talk speech input via NVIDIA Parakeet (sherpa-onnx)
+Category=Module
 Library=parakeet
 Type=SharedLibrary
-OnDemand=True
+OnDemand=False
 Configurable=True
-Version=0.1.0
+Version=0.3.0

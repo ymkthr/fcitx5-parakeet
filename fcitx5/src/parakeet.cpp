@@ -6,14 +6,15 @@
 #include <algorithm>
 #include <utility>
 
+#include <fcitx-utils/capabilityflags.h>
 #include <fcitx-utils/log.h>
-#include <fcitx/inputmethodentry.h>
+#include <fcitx-utils/utf8.h>
+#include <fcitx/event.h>
+#include <fcitx/inputcontextmanager.h>
 #include <fcitx/inputpanel.h>
 #include <fcitx/surroundingtext.h>
 #include <fcitx/text.h>
 #include <fcitx/userinterface.h>
-#include <fcitx-utils/capabilityflags.h>
-#include <fcitx-utils/utf8.h>
 
 namespace fcitx {
 
@@ -26,8 +27,6 @@ FCITX_DEFINE_LOG_CATEGORY(parakeet_log, "parakeet");
 constexpr const char *kConfigFile = "conf/parakeet.conf";
 constexpr uint64_t kUsec = 1000 * 1000;
 constexpr uint64_t kFailStatusUsec = 2500 * 1000;
-// Model load can take a few seconds per language on a cold daemon start.
-constexpr uint64_t kLoadTimeoutUsec = 60 * kUsec;
 // parakeetd answers START once samples flow (RECORDER_START_TIMEOUT = 3 s).
 constexpr uint64_t kStartTimeoutUsec = 10 * kUsec;
 // Transcription of a 120 s capture stays well under this on CPU.
@@ -53,190 +52,134 @@ bool needsLeadingSpace(InputContext *ic) {
     return before != ' ' && before != '\n' && before != '\t';
 }
 
+/// The active input method is composing (e.g. kana awaiting conversion);
+/// dictating into the middle of that would corrupt both.
+bool composing(InputContext *ic) {
+    const auto &panel = ic->inputPanel();
+    return panel.clientPreedit().size() > 0 || panel.preedit().size() > 0;
+}
+
 } // namespace
 
-ParakeetEngine::ParakeetEngine(Instance *instance)
+ParakeetModule::ParakeetModule(Instance *instance)
     : instance_(instance), factory_([](InputContext &) { return new ParakeetState; }) {
     registerDomain("fcitx5-parakeet", FCITX_INSTALL_LOCALEDIR);
     instance_->inputContextManager().registerProperty("parakeetState", &factory_);
     client_ = std::make_unique<ParakeetClient>(instance_->eventLoop(), defaultParakeetSocketPath());
     reloadConfig();
+
+    watchers_.emplace_back(
+        instance_->watchEvent(EventType::InputContextKeyEvent, EventWatcherPhase::PreInputMethod,
+                              [this](Event &event) { onKeyEvent(static_cast<KeyEvent &>(event)); }));
+    watchers_.emplace_back(instance_->watchEvent(
+        EventType::InputContextFocusOut, EventWatcherPhase::Default, [this](Event &event) {
+            // A capture nobody can finish is dropped. Pending transcripts
+            // still commit when they arrive.
+            auto *ic = static_cast<InputContextEvent &>(event).inputContext();
+            auto *state = ic->propertyFor(&factory_);
+            if (state->recording) {
+                cancelRecording(ic, state);
+            }
+            state->armed = false;
+            state->locked = false;
+            state->swallowRelease = false;
+        }));
 }
 
-std::string ParakeetEngine::langOf(const InputMethodEntry &entry) {
-    // parakeet-ja / parakeet-en / parakeet-auto -> ja / en / auto: the IM
-    // name selects the daemon language, so "auto" can still carry LangCode=ja
-    // for fcitx5's own language grouping.
-    static constexpr std::string_view kPrefix = "parakeet-";
-    const std::string &name = entry.uniqueName();
-    if (name.starts_with(kPrefix)) {
-        return name.substr(kPrefix.size());
-    }
-    // "en_US" -> "en" for entries added by hand with another name.
-    const std::string &code = entry.languageCode();
-    return code.substr(0, code.find_first_of("_-"));
-}
-
-void ParakeetEngine::applyConfig() {
+void ParakeetModule::applyConfig() {
     const std::string &path = *config_.socketPath;
     client_->setSocketPath(path.empty() ? defaultParakeetSocketPath() : path);
 }
 
-void ParakeetEngine::setConfig(const RawConfig &raw) {
+void ParakeetModule::setConfig(const RawConfig &raw) {
     config_.load(raw, true);
     safeSaveAsIni(config_, kConfigFile);
     applyConfig();
 }
 
-void ParakeetEngine::reloadConfig() {
+void ParakeetModule::reloadConfig() {
     readAsIni(config_, kConfigFile);
     applyConfig();
 }
 
-void ParakeetEngine::activate(const InputMethodEntry &entry, InputContextEvent &event) {
-    // Connecting here spawns parakeetd through socket activation and warms the
-    // model, so the first press is not delayed by a cold start.
-    auto *ic = event.inputContext();
-    const std::string lang = langOf(entry);
-    auto ref = ic->watch();
-    const bool sent = client_->request(
-        "LOAD", lang,
-        [this, ref](bool ok, std::string payload) {
-            if (ok) {
-                return;
-            }
-            if (auto *ic = ref.get()) {
-                failStatus(ic, payload);
-            }
-        },
-        kLoadTimeoutUsec);
-    if (!sent) {
-        failStatus(ic, _("parakeetd is not running"));
-    }
+bool ParakeetModule::isTriggerRelease(const Key &key) const {
+    // Modifiers may be released before the main key (Super+space -> space),
+    // so the release only has to match the key symbol.
+    return std::any_of(config_.triggerKey->begin(), config_.triggerKey->end(), [&](const Key &trigger) {
+        return trigger.sym() != FcitxKey_None ? trigger.sym() == key.sym()
+                                              : trigger.code() != 0 && trigger.code() == key.code();
+    });
 }
 
-void ParakeetEngine::deactivate(const InputMethodEntry & /*entry*/, InputContextEvent &event) {
-    // Focus left or the user switched input method: a capture nobody can
-    // finish is dropped. Pending transcripts still commit when they arrive.
-    auto *ic = event.inputContext();
-    auto *state = ic->propertyFor(&factory_);
-    if (state->recording) {
-        cancelRecording(ic, state);
-    }
-    state->armed = false;
-    state->swallowRelease = false;
-    updateStatus(ic, state);
-}
-
-void ParakeetEngine::reset(const InputMethodEntry & /*entry*/, InputContextEvent &event) {
-    // Toolkits call reset() on cursor moves and buffer edits, which can
-    // happen while the trigger is held, so a capture in progress survives.
-    auto *ic = event.inputContext();
-    updateStatus(ic, ic->propertyFor(&factory_));
-}
-
-std::string ParakeetEngine::subMode(const InputMethodEntry & /*entry*/, InputContext &ic) {
-    const auto *state = ic.propertyFor(&factory_);
-    if (state->recording) {
-        return _("Listening");
-    }
-    if (state->pendingResults > 0) {
-        return _("Transcribing");
-    }
-    return {};
-}
-
-std::string ParakeetEngine::subModeIconImpl(const InputMethodEntry & /*entry*/, InputContext &ic) {
-    // Panel indicators (kimpanel, tray) ask Instance::inputMethodIcon, which
-    // prefers this over the entry icon: red while capturing, amber while the
-    // daemon transcribes, the language icon otherwise.
-    const auto *state = ic.propertyFor(&factory_);
-    if (state->recording && state->live) {
-        return "fcitx-parakeet-recording";
-    }
-    if (state->pendingResults > 0) {
-        return "fcitx-parakeet-busy";
-    }
-    return {};
-}
-
-void ParakeetEngine::keyEvent(const InputMethodEntry &entry, KeyEvent &event) {
+void ParakeetModule::onKeyEvent(KeyEvent &event) {
     auto *ic = event.inputContext();
     auto *state = ic->propertyFor(&factory_);
     const Key key = event.key();
-    const bool trigger = key.checkKeyList(*config_.triggerKey);
 
     if (event.isRelease()) {
-        if (!trigger) {
+        if (!isTriggerRelease(key)) {
             return;
-        }
-        if (state->armed) {
-            state->armed = false;
-            const auto held = std::chrono::steady_clock::now() - state->pressedAt;
-            if (held < std::chrono::milliseconds(*config_.tapThreshold)) {
-                // A quick tap was not dictation: behave like the plain key.
-                if (state->recording) {
-                    cancelRecording(ic, state);
-                }
-                typeKey(ic, key);
-            } else if (state->recording) {
-                stopRecording(ic, state);
-            }
-            return event.filterAndAccept();
         }
         if (state->swallowRelease) {
             state->swallowRelease = false;
             return event.filterAndAccept();
         }
-        return;
-    }
-
-    if (trigger) {
-        if (*config_.mode == TriggerMode::PushToTalk) {
-            // Auto-repeat delivers more presses while the key is held; only
-            // the first one starts the capture.
-            if (!state->armed) {
-                state->armed = true;
-                state->pressedAt = std::chrono::steady_clock::now();
-                startRecording(ic, state, langOf(entry));
-            }
-        } else {
-            state->swallowRelease = true;
-            if (state->recording) {
-                stopRecording(ic, state);
+        if (!state->armed) {
+            return;
+        }
+        state->armed = false;
+        const auto held = std::chrono::steady_clock::now() - state->pressedAt;
+        if (state->recording) {
+            if (held < std::chrono::milliseconds(*config_.tapThreshold)) {
+                // A tap locks the recording until the next press.
+                state->locked = true;
             } else {
-                startRecording(ic, state, langOf(entry));
+                stopRecording(ic, state);
             }
         }
+        return event.filterAndAccept();
+    }
+
+    if (key.checkKeyList(*config_.triggerKey)) {
+        // Auto-repeat delivers more presses while the key is held; only the
+        // first one counts.
+        if (state->armed || state->swallowRelease) {
+            return event.filterAndAccept();
+        }
+        if (state->recording && state->locked) {
+            state->locked = false;
+            state->swallowRelease = true;
+            stopRecording(ic, state);
+            return event.filterAndAccept();
+        }
+        if (composing(ic)) {
+            PK_DEBUG() << "trigger ignored: input method is composing";
+            state->swallowRelease = true;
+            return event.filterAndAccept();
+        }
+        state->armed = true;
+        state->pressedAt = std::chrono::steady_clock::now();
+        startRecording(ic, state);
         return event.filterAndAccept();
     }
 
     if (state->recording && key.checkKeyList(*config_.cancelKey)) {
         cancelRecording(ic, state);
+        state->locked = false;
         return event.filterAndAccept();
     }
 }
 
-void ParakeetEngine::typeKey(InputContext *ic, const Key &key) {
-    if (!key.hasModifier()) {
-        if (std::string text = Key::keySymToUTF8(key.sym()); !text.empty()) {
-            ic->commitString(text);
-            return;
-        }
-    }
-    ic->forwardKey(key, false);
-    ic->forwardKey(key, true);
-}
-
-void ParakeetEngine::startRecording(InputContext *ic, ParakeetState *state, const std::string &lang) {
+void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
     state->recording = true;
     state->live = false;
+    state->locked = false;
     const uint64_t session = ++state->session;
     updateStatus(ic, state);
 
     auto ref = ic->watch();
     const bool sent = client_->request(
-        "START", lang,
+        "START", *config_.language,
         [this, ref, session](bool ok, std::string payload) {
             auto *ic = ref.get();
             if (!ic) {
@@ -253,6 +196,7 @@ void ParakeetEngine::startRecording(InputContext *ic, ParakeetState *state, cons
                 return;
             }
             state->recording = false;
+            state->locked = false;
             failStatus(ic, payload);
         },
         kStartTimeoutUsec);
@@ -262,7 +206,7 @@ void ParakeetEngine::startRecording(InputContext *ic, ParakeetState *state, cons
     }
 }
 
-void ParakeetEngine::stopRecording(InputContext *ic, ParakeetState *state) {
+void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
     state->recording = false;
     ++state->pendingResults;
     updateStatus(ic, state);
@@ -302,7 +246,7 @@ void ParakeetEngine::stopRecording(InputContext *ic, ParakeetState *state) {
     }
 }
 
-void ParakeetEngine::cancelRecording(InputContext *ic, ParakeetState *state) {
+void ParakeetModule::cancelRecording(InputContext *ic, ParakeetState *state) {
     state->recording = false;
     ++state->session;
     updateStatus(ic, state);
@@ -316,26 +260,18 @@ void ParakeetEngine::cancelRecording(InputContext *ic, ParakeetState *state) {
         kCancelTimeoutUsec);
 }
 
-void ParakeetEngine::showAux(InputContext *ic, const std::string &text) {
-    auto &panel = ic->inputPanel();
-    panel.reset();
-    if (!text.empty()) {
-        panel.setAuxUp(Text(text));
-    }
+void ParakeetModule::showAux(InputContext *ic, const std::string &text) {
+    // Only the aux line is ours; the active input method owns the rest of
+    // the panel (preedit, candidates), so it is left untouched.
+    ic->inputPanel().setAuxUp(Text(text));
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
-    // Re-query subMode / subModeIcon so the indicator follows the state.
-    ic->updateUserInterface(UserInterfaceComponent::StatusArea);
 }
 
-void ParakeetEngine::updateStatus(InputContext *ic, const ParakeetState *state) {
+void ParakeetModule::updateStatus(InputContext *ic, const ParakeetState *state) {
     if (!*config_.showStatus) {
         showAux(ic, {});
         return;
     }
-    // Language-neutral glyphs: the aux popup cannot hold images, so the
-    // microphone emoji stands in for "recording" and an ellipsis for
-    // "transcribing". Both wait for the daemon's confirmation, so their
-    // appearance is the cue that speech is being captured.
     if (state->recording) {
         showAux(ic, state->live ? "🎙️" : "");
     } else if (state->pendingResults > 0) {
@@ -345,21 +281,20 @@ void ParakeetEngine::updateStatus(InputContext *ic, const ParakeetState *state) 
     }
 }
 
-void ParakeetEngine::failStatus(InputContext *ic, const std::string &message) {
+void ParakeetModule::failStatus(InputContext *ic, const std::string &message) {
     PK_WARN() << message;
     showAux(ic, std::string(_("Parakeet: ")) + message);
     auto ref = ic->watch();
-    failTimer_ = instance_->eventLoop().addTimeEvent(
-        CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + kFailStatusUsec, 0,
-        [this, ref](EventSourceTime *source, uint64_t) {
-            source->setEnabled(false);
-            if (auto *ic = ref.get()) {
-                updateStatus(ic, ic->propertyFor(&factory_));
-            }
-            return true;
-        });
+    failTimer_ = instance_->eventLoop().addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + kFailStatusUsec,
+                                                     0, [this, ref](EventSourceTime *source, uint64_t) {
+                                                         source->setEnabled(false);
+                                                         if (auto *ic = ref.get()) {
+                                                             updateStatus(ic, ic->propertyFor(&factory_));
+                                                         }
+                                                         return true;
+                                                     });
 }
 
 } // namespace fcitx
 
-FCITX_ADDON_FACTORY_V2(parakeet, fcitx::ParakeetEngineFactory);
+FCITX_ADDON_FACTORY_V2(parakeet, fcitx::ParakeetModuleFactory);

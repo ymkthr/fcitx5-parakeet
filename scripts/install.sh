@@ -22,15 +22,12 @@ systemctl --user enable --now parakeetd.socket
 systemctl --user try-restart parakeetd.service
 parakeet-ctl hello
 
-
-step "register input methods"
+step "restart fcitx5"
 if busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; then
   busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
-  sleep 2
-  python3 "$ROOT/scripts/fcitx5-register.py"
 else
-  echo "fcitx5 is not running; start it, then run scripts/fcitx5-register.py"
+  echo "fcitx5 is not running; start it so the module loads"
 fi
 
 step "done"
-echo "Switch to 'Parakeet 音声入力' with the usual input method hotkey, hold Space, speak, release."
+echo "Tap or hold the trigger key (Menu, or CapsLock if remapped) to dictate."

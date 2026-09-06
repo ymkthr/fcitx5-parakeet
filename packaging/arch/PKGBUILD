@@ -1,13 +1,13 @@
 # Local build from the repository: run `makepkg -si` in this directory.
 pkgname=fcitx5-parakeet
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet"
 arch=(x86_64)
 url="https://github.com/katsuhiro/fcitx5-parakeet"
 license=(MIT)
 options=(!debug)
-depends=(fcitx5 hicolor-icon-theme pipewire)
+depends=(fcitx5 pipewire)
 makedepends=(cargo clang cmake extra-cmake-modules gettext)
 
 _sherpa_version=1.13.7

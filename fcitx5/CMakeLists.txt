@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(fcitx5-parakeet VERSION 0.1.0 LANGUAGES CXX)
+project(fcitx5-parakeet VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -17,7 +17,6 @@ find_package(Gettext REQUIRED)
 include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cmake")
 
 add_subdirectory(po)
-add_subdirectory(icons)
 add_subdirectory(src)
 
 include(CTest)
