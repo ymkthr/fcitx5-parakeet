@@ -21,6 +21,7 @@ The installer performs the following steps:
 2. Downloads the Japanese, English, and Silero VAD models.
 3. Enables the systemd user socket.
 4. Restarts fcitx5, if it is running, so the new module loads.
+5. On GNOME, adds the XKB option `caps:menu` so CapsLock acts as the Menu key.
 
 The build requires `base-devel`, `cargo`, `clang`, `cmake`, `extra-cmake-modules`, and `gettext`.
 `makepkg` prompts to install missing packages.
@@ -37,26 +38,38 @@ parakeet-ctl status
 
 ## Usage
 
-The default trigger key is `Menu`.
-Remapping CapsLock to Menu is recommended.
-On Wayland fcitx5 cannot turn the caps-lock state back off, so the key must be remapped rather than intercepted.
+The default trigger key is `Menu`, and CapsLock is used as the Menu key.
+On Wayland fcitx5 cannot turn the caps-lock state back off, so the desktop remaps the key instead of fcitx5 intercepting it.
 
-On GNOME, run:
+On GNOME, the installer applies this remap automatically.
+It keeps existing XKB options and appends `caps:menu`; if an option starting with `caps:` is already present, it leaves the settings unchanged to avoid a conflict.
+After the remap, CapsLock no longer locks capital letters.
+
+To keep CapsLock as it is, pass `--keep-capslock` to the installer.
+Then dictate with a physical Menu key, or change the trigger key in the configuration.
 
 ```sh
-gsettings set org.gnome.desktop.input-sources xkb-options "['caps:menu']"
+./scripts/install.sh --keep-capslock
 ```
 
-This takes effect immediately.
-If xkb-options already has entries, add `caps:menu` to the list instead of replacing it.
+To undo the remap, run the following command.
+It removes only `caps:menu` and keeps the other options.
 
-On other X11 desktops, run:
+```sh
+./scripts/capslock-menu.sh revert
+```
+
+On desktops other than GNOME, the installer changes nothing and prints instructions instead.
+On X11 desktops, run the following command (effective until logout).
 
 ```sh
 setxkbmap -option caps:menu
 ```
 
 On KDE, open System Settings, go to Keyboard, then Key Bindings, then Caps Lock behavior, and choose "Make Caps Lock an additional Menu key".
+
+Press CapsLock in a text field: a microphone mark near the cursor means the key reached fcitx5.
+If no mark appears, check whether the keyboard firmware or a key remapper turns CapsLock into another key.
 
 Tapping the trigger key (shorter than 250 milliseconds) starts recording and keeps it on.
 Tap again to stop recording; the transcript is inserted at the cursor.

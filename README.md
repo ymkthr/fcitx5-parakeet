@@ -21,6 +21,7 @@ fcitx5とPipeWireが動作している環境で、リポジトリのルートか
 2. 日本語モデル、英語モデル、Silero VADモデルをダウンロードする。
 3. ユーザー用systemd socketを有効にする。
 4. fcitx5が動作していれば再起動して、新しいモジュールを読み込む。
+5. GNOMEでは、CapsLockをMenuキーとして扱うXKBオプション`caps:menu`を追加する。
 
 ビルドには`base-devel`、`cargo`、`clang`、`cmake`、`extra-cmake-modules`、`gettext`が必要です。
 不足しているパッケージは`makepkg`がインストールを確認します。
@@ -37,26 +38,38 @@ parakeet-ctl status
 
 ## 使い方
 
-既定のトリガーキーは`Menu`です。
-CapsLockをMenuキーへ読み替えて使うことを推奨します。
-WaylandではfcitxがCapsLockの状態をオフへ戻せないため、キーを横取りするのではなく読み替える必要があります。
+既定のトリガーキーは`Menu`で、CapsLockをMenuキーとして使います。
+WaylandではfcitxがCapsLockの状態をオフへ戻せないため、キーを横取りするのではなく、OS側でMenuキーへ読み替えます。
 
-GNOMEの場合は次のコマンドで設定できます。
+GNOMEでは、インストーラーがこの読み替えを自動で設定します。
+既存のXKBオプションは残したまま`caps:menu`を追加し、すでに`caps:`で始まるオプションがある場合は競合するため変更しません。
+読み替え後は、大文字を固定するCapsLock本来の機能は使えなくなります。
+
+CapsLockをそのまま残す場合は、インストーラーに`--keep-capslock`を付けます。
+その場合はキーボードのMenuキーを使うか、設定でトリガーキーを変更してください。
 
 ```sh
-gsettings set org.gnome.desktop.input-sources xkb-options "['caps:menu']"
+./scripts/install.sh --keep-capslock
 ```
 
-設定はすぐに反映されます。
-既に他のxkb-optionsを設定している場合は、置き換えるのではなく`caps:menu`をリストへ追加してください。
+読み替えを元に戻すには次のコマンドを実行します。
+`caps:menu`だけを取り除き、他のオプションは残します。
 
-GNOME以外のX11デスクトップでは次のコマンドを使います。
+```sh
+./scripts/capslock-menu.sh revert
+```
+
+GNOME以外の環境では、インストーラーは設定を変更せず手順を表示します。
+X11デスクトップでは次のコマンドで読み替えられます（ログアウトまで有効）。
 
 ```sh
 setxkbmap -option caps:menu
 ```
 
 KDEの場合はシステム設定からキーボードの設定を開き、キーボードショートカット、CapsLockの動作の順に進み、CapsLockを追加のMenuキーとして扱う設定を選びます。
+
+入力欄でCapsLockを押し、カーソル付近にマイクの印が出れば、キーはfcitx5まで届いています。
+印が出ない場合は、キーボードのファームウェアやキー割り当てツールがCapsLockを別のキーに変えていないか確認してください。
 
 トリガーキーを短く（250ミリ秒未満）押すと、録音が開始したまま維持されます。
 もう一度押すと録音が終了し、認識結果がカーソル位置へ入力されます。

@@ -2,6 +2,35 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+KEEP_CAPSLOCK=0
+
+usage() {
+  cat <<EOF
+usage: scripts/install.sh [--keep-capslock]
+
+Builds and installs the daemon and the fcitx5 module, downloads the models,
+enables the systemd user socket, restarts fcitx5 and, on GNOME, makes CapsLock
+act as the Menu key (the default dictation trigger).
+
+  --keep-capslock  leave CapsLock alone; dictate with a Menu key or change the
+                   trigger key in fcitx5-configtool
+EOF
+}
+
+for arg in "$@"; do
+  case $arg in
+    --keep-capslock) KEEP_CAPSLOCK=1 ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $arg" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
@@ -29,5 +58,13 @@ else
   echo "fcitx5 is not running; start it so the module loads"
 fi
 
+step "trigger key"
+if ((KEEP_CAPSLOCK)); then
+  echo "leaving CapsLock alone; the trigger key is Menu"
+else
+  "$ROOT/scripts/capslock-menu.sh" apply
+fi
+
 step "done"
-echo "Tap or hold the trigger key (Menu, or CapsLock if remapped) to dictate."
+echo "Press CapsLock (or Menu) in a text field: a microphone mark near the cursor means the key reached fcitx5."
+echo "No mark: make sure the keyboard itself (firmware, key remapper) emits CapsLock."
