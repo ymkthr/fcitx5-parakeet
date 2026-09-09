@@ -123,3 +123,14 @@ Use the following command to inspect daemon logs.
 ```sh
 journalctl --user -u parakeetd.service -f
 ```
+
+## License
+
+fcitx5-parakeet itself is released under the MIT License (`LICENSE`).
+
+The package bundles the shared libraries of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache License 2.0, `LICENSE-APACHE-2.0`) and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT License) as the speech recognition runtime.
+
+The NVIDIA Parakeet models downloaded at install time are distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), and the Silero VAD model under the MIT License.
+The models are not part of the package.
+
+See `THIRD_PARTY_NOTICES.md` for the full list of bundled and downloaded components.

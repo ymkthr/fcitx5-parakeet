@@ -123,3 +123,14 @@ systemctl --user restart parakeetd.service
 ```sh
 journalctl --user -u parakeetd.service -f
 ```
+
+## ライセンス
+
+fcitx5-parakeet本体はMITライセンスです（`LICENSE`）。
+
+パッケージには音声認識ライブラリとして[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache License 2.0、`LICENSE-APACHE-2.0`）と[ONNX Runtime](https://github.com/microsoft/onnxruntime)（MITライセンス）の共有ライブラリを同梱しています。
+
+インストール時にダウンロードするNVIDIA Parakeetの音声認識モデルは[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)、Silero VADのモデルはMITライセンスで配布されています。
+モデルはパッケージには含まれません。
+
+同梱物と依存物の一覧は`THIRD_PARTY_NOTICES.md`にあります。
