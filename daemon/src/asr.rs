@@ -146,7 +146,6 @@ impl Pool {
             files: files.clone(),
             tokens,
             num_threads: cfg.num_threads,
-            provider: cfg.provider.clone(),
             sample_rate: self.sample_rate,
         })
         .with_context(|| format!("loading {lang} model from {}", cfg.dir.display()))?;
@@ -155,9 +154,8 @@ impl Pool {
             sample_rate: self.sample_rate,
         });
         info!(
-            "loaded {lang} model ({:?}, provider {}) from {} in {:.1}s",
+            "loaded {lang} model ({:?}) from {} in {:.1}s",
             kind_name(&files),
-            cfg.provider,
             cfg.dir.display(),
             started.elapsed().as_secs_f32()
         );

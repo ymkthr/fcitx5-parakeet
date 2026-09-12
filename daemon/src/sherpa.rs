@@ -59,7 +59,6 @@ pub struct RecognizerConfig {
     pub files: ModelFiles,
     pub tokens: std::path::PathBuf,
     pub num_threads: i32,
-    pub provider: String,
     pub sample_rate: i32,
 }
 
@@ -102,7 +101,7 @@ impl Recognizer {
         }
         c.model_config.tokens = keep.path(&cfg.tokens);
         c.model_config.num_threads = cfg.num_threads;
-        c.model_config.provider = keep.push(&cfg.provider);
+        c.model_config.provider = keep.push("cpu");
         c.decoding_method = keep.push("greedy_search");
         c.max_active_paths = 4;
 
