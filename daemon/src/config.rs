@@ -58,8 +58,6 @@ pub struct ModelConfig {
     /// nemo_ctc when a single model file exists.
     pub kind: String,
     pub num_threads: i32,
-    /// onnxruntime execution provider: "cpu" or "cuda".
-    pub provider: String,
 }
 
 /// Language choice for the `auto` pseudo-language. Both models decode the
@@ -86,7 +84,7 @@ pub struct Config {
     /// Silero VAD used to drop captures without speech; None disables gating.
     pub vad_model: Option<PathBuf>,
     /// Decode one second of silence after loading so the first real utterance
-    /// does not pay onnxruntime's first-run cost (~0.5 s on CUDA).
+    /// does not pay onnxruntime's first-run cost.
     pub warmup: bool,
     pub auto: AutoConfig,
 }
@@ -128,7 +126,6 @@ struct RawModel {
     dir: Option<PathBuf>,
     kind: Option<String>,
     num_threads: Option<i32>,
-    provider: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -165,7 +162,6 @@ fn default_models() -> BTreeMap<String, ModelConfig> {
         dir: base.join(dir),
         kind: "auto".into(),
         num_threads: threads,
-        provider: "cpu".into(),
     };
     BTreeMap::from([
         (
@@ -196,7 +192,6 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
             dir: default_models_dir().join(&lang),
             kind: "auto".into(),
             num_threads: 4,
-            provider: "cpu".into(),
         });
         models.insert(
             lang.clone(),
@@ -205,7 +200,6 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
                 dir: spec.dir.map(|d| expand_home(&d)).unwrap_or(base.dir),
                 kind: spec.kind.unwrap_or(base.kind),
                 num_threads: spec.num_threads.unwrap_or(base.num_threads),
-                provider: spec.provider.unwrap_or(base.provider),
             },
         );
     }

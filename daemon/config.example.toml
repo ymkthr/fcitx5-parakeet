@@ -23,13 +23,11 @@
 dir = "~/.local/share/parakeetd/models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8"
 # kind = "nemo_ctc"
 num_threads = 4
-# provider = "cpu"
 
 [models.en]
 dir = "~/.local/share/parakeetd/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 # kind = "nemo_transducer"
 num_threads = 4
-# provider = "cpu"
 
 # "auto" decodes with both models. English wins when its mean token log
 # probability reaches the threshold; otherwise the Japanese result is used.
