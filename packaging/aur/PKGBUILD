@@ -1,0 +1,58 @@
+# Maintainer: ymkthr <https://github.com/ymkthr>
+pkgname=fcitx5-parakeet
+pkgver=0.3.0
+pkgrel=1
+pkgdesc="Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet"
+arch=(x86_64)
+url="https://github.com/ymkthr/fcitx5-parakeet"
+# MIT: this project and ONNX Runtime; Apache-2.0: the bundled sherpa-onnx libraries.
+license=(MIT Apache-2.0)
+depends=(fcitx5 pipewire gcc-libs)
+makedepends=(cargo clang cmake extra-cmake-modules gettext)
+optdepends=('curl: parakeetd-download-models fetches the speech models')
+install=$pkgname.install
+options=(!debug)
+
+_sherpa_version=1.13.7
+_sherpa_archive="sherpa-onnx-v${_sherpa_version}-linux-x64-shared-no-tts"
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz"
+        "${_sherpa_archive}.tar.bz2::https://github.com/k2-fsa/sherpa-onnx/releases/download/v${_sherpa_version}/${_sherpa_archive}.tar.bz2")
+sha256sums=('SKIP'
+            'e5abe50fae5e25ad6b70bc74b51984ccea77df2571f211833b572fcc0d1c3bef')
+
+prepare() {
+  cd "$pkgname-$pkgver/daemon"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  cmake -S fcitx5 -B build \
+    -DCMAKE_BUILD_TYPE=None \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DBUILD_TESTING=OFF
+  cmake --build build
+
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  SHERPA_ONNX_LIB_DIR="$srcdir/$_sherpa_archive/lib" \
+  SHERPA_ONNX_RPATH=/usr/lib/parakeetd \
+    cargo build --manifest-path daemon/Cargo.toml --release --frozen
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  DESTDIR="$pkgdir" cmake --install build
+  install -Dm755 target/release/parakeetd "$pkgdir/usr/bin/parakeetd"
+  install -Dm755 target/release/parakeet-ctl "$pkgdir/usr/bin/parakeet-ctl"
+  install -Dm755 scripts/download-models.sh "$pkgdir/usr/bin/parakeetd-download-models"
+  install -Dm755 scripts/capslock-menu.sh "$pkgdir/usr/bin/parakeet-capslock-menu"
+  install -Dm755 -t "$pkgdir/usr/lib/parakeetd" "$srcdir/$_sherpa_archive/lib/"*.so
+  install -Dm644 -t "$pkgdir/usr/lib/systemd/user" systemd/parakeetd.service systemd/parakeetd.socket
+  install -Dm644 daemon/config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
+  install -Dm644 THIRD_PARTY_NOTICES.md "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY_NOTICES.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 LICENSE-APACHE-2.0 "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE-2.0"
+  install -Dm644 licenses/onnxruntime.LICENSE "$pkgdir/usr/share/licenses/$pkgname/onnxruntime.LICENSE"
+}

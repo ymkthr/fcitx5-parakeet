@@ -32,6 +32,8 @@ package() {
   DESTDIR="$pkgdir" cmake --install fcitx-build
   install -Dm755 "$startdir/../../daemon/target/release/parakeetd" "$pkgdir/usr/bin/parakeetd"
   install -Dm755 "$startdir/../../daemon/target/release/parakeet-ctl" "$pkgdir/usr/bin/parakeet-ctl"
+  install -Dm755 "$startdir/../../scripts/download-models.sh" "$pkgdir/usr/bin/parakeetd-download-models"
+  install -Dm755 "$startdir/../../scripts/capslock-menu.sh" "$pkgdir/usr/bin/parakeet-capslock-menu"
   install -Dm755 -t "$pkgdir/usr/lib/parakeetd" "$srcdir/$_sherpa_archive/lib/"*.so
   install -Dm644 -t "$pkgdir/usr/lib/systemd/user" "$startdir/../../systemd/parakeetd.service" \
     "$startdir/../../systemd/parakeetd.socket"

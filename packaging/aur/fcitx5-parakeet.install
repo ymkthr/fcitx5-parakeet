@@ -1,0 +1,28 @@
+post_install() {
+  cat <<'EOF'
+fcitx5-parakeet: finish the setup as your desktop user (not root):
+
+  1. parakeetd-download-models              # ~1.3 GB into ~/.local/share/parakeetd/models
+  2. systemctl --user enable --now parakeetd.socket
+  3. restart fcitx5, e.g.:
+     busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
+  4. optional: parakeet-capslock-menu apply  # GNOME: make CapsLock act as the Menu trigger key
+
+Check the connection with: parakeet-ctl hello
+EOF
+}
+
+post_upgrade() {
+  cat <<'EOF'
+fcitx5-parakeet: as your desktop user, run
+  systemctl --user try-restart parakeetd.service
+and restart fcitx5 to load the updated module.
+EOF
+}
+
+post_remove() {
+  cat <<'EOF'
+fcitx5-parakeet: models remain in ~/.local/share/parakeetd/models; remove them by hand.
+Disable the socket with: systemctl --user disable --now parakeetd.socket
+EOF
+}
