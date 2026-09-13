@@ -8,7 +8,7 @@ It never switches the input method itself.
 
 ## Installation
 
-fcitx5-parakeet supports Arch Linux and expects fcitx5 and PipeWire to be running.
+fcitx5-parakeet supports Arch Linux and can be packaged for Debian/Ubuntu (`.deb`) and Fedora (`.rpm`). It expects fcitx5 and PipeWire to be running.
 
 ### From the AUR
 
@@ -24,6 +24,19 @@ systemctl --user enable --now parakeetd.socket
 busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
 parakeet-capslock-menu apply   # GNOME: make CapsLock act as the Menu key
 ```
+
+### From a deb or rpm
+
+On Debian/Ubuntu and Fedora, build the package on a machine with docker or podman and install it.
+
+```sh
+packaging/build.sh deb    # writes a .deb to packaging/dist/ (default image: debian:trixie)
+packaging/build.sh rpm    # writes an .rpm to packaging/dist/ (default image: fedora:42)
+sudo apt install ./packaging/dist/fcitx5-parakeet_*.deb
+sudo dnf install ./packaging/dist/fcitx5-parakeet-*.rpm
+```
+
+The post-install steps are the same as for the AUR package. See `packaging/README.md` for details.
 
 ### From the repository
 

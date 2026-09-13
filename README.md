@@ -8,7 +8,7 @@ fcitx5からNVIDIA Parakeetを使う、ローカル音声入力です。
 
 ## インストール
 
-Arch Linuxで利用できます。fcitx5とPipeWireが動作している環境が前提です。
+Arch Linuxのほか、Debian/Ubuntu（`.deb`）とFedora（`.rpm`）向けのパッケージをビルドできます。fcitx5とPipeWireが動作している環境が前提です。
 
 ### AURから
 
@@ -24,6 +24,19 @@ systemctl --user enable --now parakeetd.socket
 busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
 parakeet-capslock-menu apply   # GNOMEでCapsLockをMenuキーにする場合
 ```
+
+### debまたはrpmから
+
+Debian/UbuntuとFedoraでは、dockerまたはpodmanのあるマシンでパッケージをビルドしてインストールします。
+
+```sh
+packaging/build.sh deb    # packaging/dist/ に .deb ができる（既定はdebian:trixie）
+packaging/build.sh rpm    # packaging/dist/ に .rpm ができる（既定はfedora:42）
+sudo apt install ./packaging/dist/fcitx5-parakeet_*.deb
+sudo dnf install ./packaging/dist/fcitx5-parakeet-*.rpm
+```
+
+インストール後の手順はAURと同じです。詳細は`packaging/README.md`を参照してください。
 
 ### リポジトリから
 

@@ -2,6 +2,32 @@
 
 - `arch/` — 作業ツリーからビルドする開発用PKGBUILD。`scripts/install.sh`が使う。
 - `aur/` — AURに公開するPKGBUILD。GitHubのタグ付きtarballからビルドする。
+- `deb/debian/` — Debian/Ubuntu向けのdebhelperパッケージング。
+- `rpm/` — Fedora向けのspecファイル。
+- `stage.sh` — ビルド済みのデーモンとアドオンをパッケージルートへ配置する共通スクリプト。debとrpmが使う。
+- `build.sh` — コンテナ内で`.deb`または`.rpm`をビルドする。成果物は`dist/`へ出る。
+
+## debとrpmのビルド
+
+dockerまたはpodmanが必要です。作業ツリー（gitが追跡しているファイルと、無視されていない未追跡ファイル）をコンテナへ渡してビルドします。
+
+```sh
+packaging/build.sh deb                 # debian:trixie
+packaging/build.sh deb ubuntu:24.04    # イメージを指定
+packaging/build.sh rpm                 # fedora:42
+```
+
+sherpa-onnxのリリースアーカイブは`packaging/cache/`にキャッシュされます。
+バージョンを上げるときは`daemon/Cargo.toml`、`fcitx5/CMakeLists.txt`、各PKGBUILDに加えて`deb/debian/changelog`と`rpm/fcitx5-parakeet.spec`も揃えます。
+
+ビルドしたパッケージのインストールは通常どおりです。
+
+```sh
+sudo apt install ./packaging/dist/fcitx5-parakeet_0.3.0-1_amd64.deb
+sudo dnf install ./packaging/dist/fcitx5-parakeet-0.3.0-1.fc42.x86_64.rpm
+```
+
+インストール後の手順（モデルの取得、socketの有効化、fcitx5の再起動）はAURと同じです。README.mdを参照してください。
 
 ## AURへの公開手順
 

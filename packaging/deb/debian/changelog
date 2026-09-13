@@ -1,0 +1,5 @@
+fcitx5-parakeet (0.3.0-1) unstable; urgency=medium
+
+  * Initial Debian packaging.
+
+ -- ymkthr <ymkthr@users.noreply.github.com>  Sun, 13 Sep 2026 18:30:00 +0900
