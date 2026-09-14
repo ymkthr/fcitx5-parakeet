@@ -1,0 +1,37 @@
+#!/usr/bin/make -f
+# Build from a tree exported by packaging/build.sh. The sherpa-onnx release
+# archive is expected unpacked at $(SHERPA_ONNX_DIR) (build.sh sets it).
+export DH_VERBOSE = 1
+export CARGO_HOME = $(CURDIR)/debian/cargo-home
+export SHERPA_ONNX_LIB_DIR = $(SHERPA_ONNX_DIR)/lib
+export SHERPA_ONNX_RPATH = /usr/lib/parakeetd
+
+PKG = fcitx5-parakeet
+DEST = $(CURDIR)/debian/$(PKG)
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	cmake -S fcitx5 -B fcitx-build \
+		-DCMAKE_BUILD_TYPE=None \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DBUILD_TESTING=OFF
+
+override_dh_auto_build:
+	cmake --build fcitx-build
+	cargo build --manifest-path daemon/Cargo.toml --release --locked
+
+override_dh_auto_install:
+	packaging/stage.sh "$(DEST)" "$(SHERPA_ONNX_LIB_DIR)" /usr/lib /usr/share/doc/$(PKG)
+
+override_dh_auto_test:
+
+override_dh_auto_clean:
+	rm -rf fcitx-build daemon/target debian/cargo-home
+
+# The prebuilt sherpa-onnx/onnxruntime libraries are private to parakeetd.
+override_dh_shlibdeps:
+	dh_shlibdeps -- -l$(DEST)/usr/lib/parakeetd
+
+override_dh_dwz:

@@ -1,0 +1,21 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: fcitx5-parakeet
+Source: https://github.com/ymkthr/fcitx5-parakeet
+
+Files: *
+Copyright: 2026 ymkthr
+License: MIT
+
+Files: daemon/vendor/sherpa-onnx/*
+Copyright: 2023 Xiaomi Corporation
+License: Apache-2.0
+
+License: MIT
+ See /usr/share/doc/fcitx5-parakeet/LICENSE.
+
+License: Apache-2.0
+ See /usr/share/doc/fcitx5-parakeet/LICENSE-APACHE-2.0.
+ .
+ The binary package bundles libsherpa-onnx-c-api.so and libsherpa-onnx-cxx-api.so
+ (Apache-2.0) and libonnxruntime.so (MIT, see onnxruntime.LICENSE) under
+ /usr/lib/parakeetd. Details in THIRD_PARTY_NOTICES.md.

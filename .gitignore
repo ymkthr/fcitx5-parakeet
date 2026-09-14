@@ -11,3 +11,5 @@ packaging/aur/pkg/
 packaging/aur/*.pkg.tar.*
 packaging/aur/*.tar.gz
 packaging/aur/*.tar.bz2
+packaging/dist/
+packaging/cache/
