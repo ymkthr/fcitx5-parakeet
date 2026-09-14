@@ -8,8 +8,26 @@ It never switches the input method itself.
 
 ## Installation
 
-fcitx5-parakeet supports Arch Linux.
-Run the installer from the repository root on a system with fcitx5 and PipeWire running.
+fcitx5-parakeet supports Arch Linux and expects fcitx5 and PipeWire to be running.
+
+### From the AUR
+
+```sh
+paru -S fcitx5-parakeet   # or: yay -S fcitx5-parakeet
+```
+
+The package does not include the models. After installing, run the following as your desktop user:
+
+```sh
+parakeetd-download-models
+systemctl --user enable --now parakeetd.socket
+busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
+parakeet-capslock-menu apply   # GNOME: make CapsLock act as the Menu key
+```
+
+### From the repository
+
+Run the installer from the repository root.
 
 ```sh
 ./scripts/install.sh
@@ -56,7 +74,7 @@ To undo the remap, run the following command.
 It removes only `caps:menu` and keeps the other options.
 
 ```sh
-./scripts/capslock-menu.sh revert
+parakeet-capslock-menu revert
 ```
 
 On desktops other than GNOME, the installer changes nothing and prints instructions instead.

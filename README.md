@@ -8,8 +8,26 @@ fcitx5からNVIDIA Parakeetを使う、ローカル音声入力です。
 
 ## インストール
 
-Arch Linuxで利用できます。
-fcitx5とPipeWireが動作している環境で、リポジトリのルートから次のスクリプトを実行してください。
+Arch Linuxで利用できます。fcitx5とPipeWireが動作している環境が前提です。
+
+### AURから
+
+```sh
+paru -S fcitx5-parakeet   # または yay -S fcitx5-parakeet
+```
+
+パッケージにはモデルが含まれません。インストール後に、デスクトップのユーザーとして次を実行してください。
+
+```sh
+parakeetd-download-models
+systemctl --user enable --now parakeetd.socket
+busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
+parakeet-capslock-menu apply   # GNOMEでCapsLockをMenuキーにする場合
+```
+
+### リポジトリから
+
+リポジトリのルートから次のスクリプトを実行してください。
 
 ```sh
 ./scripts/install.sh
@@ -56,7 +74,7 @@ CapsLockをそのまま残す場合は、インストーラーに`--keep-capsloc
 `caps:menu`だけを取り除き、他のオプションは残します。
 
 ```sh
-./scripts/capslock-menu.sh revert
+parakeet-capslock-menu revert
 ```
 
 GNOME以外の環境では、インストーラーは設定を変更せず手順を表示します。
