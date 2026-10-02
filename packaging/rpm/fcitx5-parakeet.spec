@@ -52,6 +52,9 @@ cmake --build fcitx-build
 
 export SHERPA_ONNX_LIB_DIR="$PWD/%{sherpa_archive}/lib"
 export SHERPA_ONNX_RPATH=%{_libdir}/parakeetd
+# ggml turns every SIMD option off when SOURCE_DATE_EPOCH is set, which
+# rpmbuild does; parakeetd checks for these at start-up.
+export GGML_SSE42=ON GGML_AVX=ON GGML_AVX2=ON GGML_BMI2=ON GGML_FMA=ON GGML_F16C=ON
 cargo build --manifest-path daemon/Cargo.toml --release --locked
 
 %install

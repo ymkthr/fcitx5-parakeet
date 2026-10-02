@@ -109,7 +109,11 @@ impl Daemon {
             }
         });
         let pool = Arc::new(Pool::new(&cfg));
-        let corrector = cfg.correction.clone().map(|c| Arc::new(Corrector::new(c)));
+        let corrector = cfg
+            .correction
+            .clone()
+            .filter(|_| crate::correct::cpu_supported())
+            .map(|c| Arc::new(Corrector::new(c)));
         let capture = match Capture::spawn(CaptureConfig {
             sample_rate: cfg.sample_rate,
             target: cfg.target.clone(),
