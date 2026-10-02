@@ -67,6 +67,10 @@ struct ParakeetState : public InputContextProperty {
     int pendingResults = 0;
     // Bumped per capture so late START replies cannot touch a newer session.
     uint64_t session = 0;
+    // The START request whose PARTIAL events feed `partial`.
+    uint64_t startRequest = 0;
+    // Latest live transcript of the current capture, shown until its result lands.
+    std::string partial;
     std::chrono::steady_clock::time_point pressedAt;
 };
 

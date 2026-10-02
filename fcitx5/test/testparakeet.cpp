@@ -4,7 +4,8 @@
  * Drives the parakeet module through fcitx5's test frontend against a live
  * parakeetd while the plain keyboard input method is active. Verifies:
  *   1. unrelated keys are not swallowed,
- *   2. holding the trigger dictates: the transcript is committed on release,
+ *   2. holding the trigger dictates: the live transcript shows in the aux
+ *      line while held, and the transcript is committed on release,
  *   3. a tap locks the recording until the next press.
  *
  * Environment:
@@ -156,7 +157,12 @@ int main() {
             holdUsec = static_cast<uint64_t>(std::stod(envOr("PARAKEET_TEST_HOLD_SEC", "8")) * kUsec);
         }
         after(holdUsec, [&]() {
-            FCITX_ASSERT(aux() == "🎙️") << "recording never went live: " << aux();
+            const std::string live = aux();
+            FCITX_INFO() << "aux before release: " << live;
+            FCITX_ASSERT(live.rfind("🎙️", 0) == 0) << "recording never went live: " << live;
+            if (expectCommit) {
+                FCITX_ASSERT(live.size() > std::string("🎙️ ").size()) << "no live transcript: " << live;
+            }
             release(kTrigger);
         });
         after(holdUsec + 15 * kUsec, [&]() {

@@ -1,6 +1,7 @@
-//! Model pool, speech gating and the `auto` language decision.
+//! Model pool, speech gating, preview segmentation and the `auto` language decision.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -202,12 +203,51 @@ impl Gate {
 
     /// Samples worth decoding, or None when the capture holds no speech.
     pub fn speech(&self, samples: Vec<f32>) -> Option<Vec<f32>> {
-        let (start, end) = self.vad.lock().speech_span(&samples)?;
-        let pad = (SPEECH_PAD_SECONDS * self.sample_rate as f32) as usize;
-        let s = start.saturating_sub(pad);
-        let e = (end + pad).min(samples.len());
-        Some(samples[s..e].to_vec())
+        let segments = self.segments(&samples);
+        let span = self.span(samples.len(), &segments)?;
+        Some(keep(samples, span))
     }
+
+    pub fn segments(&self, samples: &[f32]) -> Vec<(usize, usize)> {
+        self.vad.lock().segments(samples)
+    }
+
+    /// Range of `len` samples covering `segments` plus a little context.
+    pub fn span(&self, len: usize, segments: &[(usize, usize)]) -> Option<Range<usize>> {
+        let start = segments.iter().map(|s| s.0).min()?;
+        let end = segments.iter().map(|s| s.1).max()?;
+        let pad = (SPEECH_PAD_SECONDS * self.sample_rate as f32) as usize;
+        Some(start.saturating_sub(pad)..(end + pad).min(len))
+    }
+}
+
+/// `samples[range]`, reusing the allocation.
+pub fn keep(mut samples: Vec<f32>, range: Range<usize>) -> Vec<f32> {
+    samples.truncate(range.end);
+    samples.drain(..range.start);
+    samples
+}
+
+/// Where to cut a long preview tail of `len` samples: the middle of the last
+/// pause that leaves at least `min_after` samples after it. A pause is a gap
+/// between speech segments or after the last one.
+pub fn last_pause(segments: &[(usize, usize)], len: usize, min_after: usize) -> Option<usize> {
+    let next_starts = segments.iter().skip(1).map(|s| s.0).chain([len]);
+    segments
+        .iter()
+        .map(|s| s.1)
+        .zip(next_starts)
+        .filter(|(end, next)| next > end)
+        .map(|(end, next)| (end + next) / 2)
+        .filter(|cut| cut + min_after <= len)
+        .last()
+}
+
+/// Joins preview pieces; only words written in ASCII need a space between them.
+pub fn join(head: &str, tail: &str) -> String {
+    let spaced = head.chars().last().is_some_and(|c| c.is_ascii())
+        && tail.chars().next().is_some_and(|c| c.is_ascii());
+    format!("{head}{}{tail}", if spaced { " " } else { "" })
 }
 
 /// Cheap pre-check shared by the gated and ungated paths.
@@ -303,5 +343,34 @@ mod tests {
         assert!(is_silent(&[0.0, 0.001, -0.0015]));
         assert!(!is_silent(&[0.0, 0.01]));
         assert_eq!(sanitize(" a\nb\r\n"), "a b");
+    }
+
+    #[test]
+    fn long_tail_is_cut_at_the_last_pause_that_leaves_a_second() {
+        let s = 16_000;
+        // Pauses at 3-4 s, 8-9 s and 10.5-10.9 s; the last leaves under 1 s of a 11.5 s tail.
+        let segments = [
+            (0, 3 * s),
+            (4 * s, 8 * s),
+            (9 * s, 10 * s + s / 2),
+            (10 * s + 9 * s / 10, 11 * s),
+        ];
+        assert_eq!(last_pause(&segments, 11 * s + s / 2, s), Some(17 * s / 2));
+        // Speech followed by silence: the trailing gap is a pause too.
+        assert_eq!(last_pause(&[(0, 9 * s)], 12 * s, s), Some(21 * s / 2));
+    }
+
+    #[test]
+    fn continuous_speech_has_no_cut() {
+        assert_eq!(last_pause(&[(0, 12 * 16_000)], 12 * 16_000, 16_000), None);
+        assert_eq!(last_pause(&[], 12 * 16_000, 16_000), None);
+    }
+
+    #[test]
+    fn pieces_join_with_a_space_only_between_ascii() {
+        assert_eq!(join("今日は", "晴れです。"), "今日は晴れです。");
+        assert_eq!(join("Hello there.", "How are you?"), "Hello there. How are you?");
+        assert_eq!(join("", "はい"), "はい");
+        assert_eq!(join("ok", ""), "ok");
     }
 }

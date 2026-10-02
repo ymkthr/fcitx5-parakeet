@@ -5,12 +5,15 @@ use parakeetd::config;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
 struct Client {
-    stream: BufReader<UnixStream>,
+    stream: UnixStream,
+    /// Reply lines; a reader thread prints PARTIAL events to stderr as they arrive.
+    replies: mpsc::Receiver<String>,
     next_id: u64,
 }
 
@@ -18,8 +21,24 @@ impl Client {
     fn connect(path: &PathBuf) -> Result<Self> {
         let stream = UnixStream::connect(path)
             .with_context(|| format!("connecting to {}", path.display()))?;
+        let reader = BufReader::new(stream.try_clone()?);
+        let (tx, replies) = mpsc::channel();
+        let connected = Instant::now();
+        std::thread::spawn(move || {
+            for line in reader.lines() {
+                let Ok(line) = line else { break };
+                let rest = line.split_once(' ').map_or("", |(_, rest)| rest);
+                let (status, text) = rest.split_once(' ').unwrap_or((rest, ""));
+                if status == "PARTIAL" {
+                    eprintln!("[{:6.2}s] {text}", connected.elapsed().as_secs_f32());
+                } else if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
         Ok(Self {
-            stream: BufReader::new(stream),
+            stream,
+            replies,
             next_id: 1,
         })
     }
@@ -32,15 +51,14 @@ impl Client {
         } else {
             format!(" {arg}")
         };
-        writeln!(self.stream.get_mut(), "{id} {command}{suffix}")?;
-        self.stream.get_mut().flush()?;
+        writeln!(self.stream, "{id} {command}{suffix}")?;
+        self.stream.flush()?;
 
         loop {
-            let mut line = String::new();
-            if self.stream.read_line(&mut line)? == 0 {
+            let Ok(line) = self.replies.recv() else {
                 bail!("daemon closed the connection");
-            }
-            let Some((reply_id, rest)) = line.trim_end().split_once(' ') else {
+            };
+            let Some((reply_id, rest)) = line.split_once(' ') else {
                 continue;
             };
             if reply_id.parse::<u64>() != Ok(id) {

@@ -108,7 +108,9 @@ Tap again to stop recording; the transcript is inserted at the cursor.
 Holding the trigger key records while it is held down.
 Releasing it stops recording; the transcript is inserted at the cursor.
 
-`🎙️` appears near the cursor while recording.
+While recording, `🎙️` appears near the cursor followed by a live transcript of what you have said so far (its last 40 characters).
+The live transcript updates about every 0.5 seconds and is only a preview.
+The inserted text comes from transcribing the whole recording again after it stops, with homophone correction.
 `…` appears while the recording is being transcribed.
 
 Press Escape while recording to cancel.
@@ -158,13 +160,20 @@ The settings are stored in `~/.config/fcitx5/conf/parakeet.conf`.
 | TapThresholdMs | 250 | Presses shorter than this lock the recording on; longer presses record only while held |
 | Language | auto | auto, ja, or en |
 | SocketPath | Empty | Uses `$XDG_RUNTIME_DIR/parakeetd.sock` when empty |
-| ShowStatus | True | Shows `🎙️` or `…` near the cursor |
+| ShowStatus | True | Shows `🎙️` with the live transcript, or `…`, near the cursor |
 
 To use a different microphone, create `~/.config/parakeetd/config.toml` and specify its PipeWire source name.
 See `daemon/config.example.toml` for the complete configuration example.
 
 ```toml
 target = "alsa_input.example"
+```
+
+`partial_interval_ms` sets how often the live transcript updates, in milliseconds (default 500).
+Set it to 0 to turn the live transcript off.
+
+```toml
+partial_interval_ms = 0
 ```
 
 Restart the daemon after changing its configuration.

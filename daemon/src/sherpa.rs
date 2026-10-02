@@ -173,7 +173,7 @@ fn parse_result(json: &str) -> Result<Transcript> {
     })
 }
 
-/// Silero VAD over a finished capture: where is the speech, if any?
+/// Silero VAD over a buffer of samples: where is the speech, if any?
 pub struct Vad {
     ptr: *const ffi::SherpaOnnxVoiceActivityDetector,
     window: usize,
@@ -206,8 +206,8 @@ impl Vad {
         Ok(Self { ptr, window: 512 })
     }
 
-    /// Sample range `[start, end)` covering every detected speech segment.
-    pub fn speech_span(&mut self, samples: &[f32]) -> Option<(usize, usize)> {
+    /// Detected speech segments `[start, end)`, in order.
+    pub fn segments(&mut self, samples: &[f32]) -> Vec<(usize, usize)> {
         // SAFETY: pointer valid for the lifetime of self; slices outlive the calls.
         unsafe {
             ffi::SherpaOnnxVoiceActivityDetectorReset(self.ptr);
@@ -229,21 +229,18 @@ impl Vad {
                 );
             }
             ffi::SherpaOnnxVoiceActivityDetectorFlush(self.ptr);
-            let mut span: Option<(usize, usize)> = None;
+            let mut segments = Vec::new();
             while ffi::SherpaOnnxVoiceActivityDetectorEmpty(self.ptr) == 0 {
                 let seg = ffi::SherpaOnnxVoiceActivityDetectorFront(self.ptr);
                 if !seg.is_null() {
                     let start = (*seg).start.max(0) as usize;
                     let end = start + (*seg).n.max(0) as usize;
-                    span = Some(match span {
-                        None => (start, end),
-                        Some((s, e)) => (s.min(start), e.max(end)),
-                    });
+                    segments.push((start, end.min(samples.len())));
                     ffi::SherpaOnnxDestroySpeechSegment(seg);
                 }
                 ffi::SherpaOnnxVoiceActivityDetectorPop(self.ptr);
             }
-            span.map(|(s, e)| (s, e.min(samples.len())))
+            segments
         }
     }
 }

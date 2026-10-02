@@ -100,6 +100,8 @@ pub struct Config {
     pub auto: AutoConfig,
     /// None when disabled or the model is not installed.
     pub correction: Option<CorrectionConfig>,
+    /// Live preview period while recording; 0 disables PARTIAL lines.
+    pub partial_interval_ms: u64,
 }
 
 impl Config {
@@ -173,6 +175,7 @@ struct Raw {
     auto: RawAuto,
     #[serde(default)]
     correction: RawCorrection,
+    partial_interval_ms: Option<u64>,
 }
 
 fn default_models() -> BTreeMap<String, ModelConfig> {
@@ -289,6 +292,7 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
             threshold: raw.auto.threshold.unwrap_or(-0.35),
         },
         correction: correction(raw.correction)?,
+        partial_interval_ms: raw.partial_interval_ms.unwrap_or(500),
     })
 }
 

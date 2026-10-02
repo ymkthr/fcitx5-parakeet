@@ -2,11 +2,15 @@
 //!
 //! Request:   `<id> <COMMAND> [args]`
 //! Response:  `<id> OK [payload]` or `<id> ERR <message>`
+//! Event:     `<id> PARTIAL <text>`, pushed for an earlier request `<id>`
 //!
 //! Commands:
 //!   HELLO            -> `OK parakeetd <version>`
 //!   LOAD <lang>      -> `OK` once the model(s) for <lang> are in memory
-//!   START <lang>     -> `OK` once the microphone capture is running
+//!   START <lang>     -> `OK` once the microphone capture is running. Until the
+//!                       capture ends, `<id> PARTIAL <text>` lines (same id)
+//!                       carry a provisional transcript of the audio so far
+//!                       whenever it changes; none follow the STOP/CANCEL reply
 //!   STOP [context]   -> `OK <lang> <text>` after transcription (text may be empty);
 //!                       context is the text before the cursor, used to correct
 //!                       Japanese homophones
@@ -31,7 +35,9 @@ use parking_lot::Mutex;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::unix::OwnedWriteHalf;
 use tokio::net::{UnixListener, UnixStream};
+use tokio::sync::oneshot;
 use tokio::task::JoinSet;
+use tokio::time::MissedTickBehavior;
 
 use crate::asr::{self, Gate, Pool};
 use crate::audio::{Capture, CaptureConfig, Recording};
@@ -40,11 +46,17 @@ use crate::correct::Corrector;
 
 /// Seconds to wait for the first samples before declaring the microphone dead.
 const RECORDER_START_TIMEOUT: Duration = Duration::from_secs(3);
+/// The preview re-decodes its tail every tick; past this it commits up to a pause.
+const PREVIEW_TAIL_SECONDS: f32 = 10.0;
+/// Audio a preview cut must leave after it, so a word just begun is not split.
+const PREVIEW_MIN_AFTER_SECONDS: f32 = 1.0;
 
 struct Active {
     owner: u64,
     lang: String,
-    recording: Option<Recording>,
+    recording: Option<Arc<Recording>>,
+    /// Dropping it stops the capture's preview task.
+    preview: oneshot::Sender<()>,
 }
 
 pub struct Daemon {
@@ -60,7 +72,10 @@ pub struct Daemon {
 type Writer = Arc<tokio::sync::Mutex<OwnedWriteHalf>>;
 
 async fn send(w: &Writer, line: String) {
-    let mut w = w.lock().await;
+    write_line(&mut *w.lock().await, line).await;
+}
+
+async fn write_line(w: &mut OwnedWriteHalf, line: String) {
     if let Err(e) = w.write_all(format!("{line}\n").as_bytes()).await {
         debug!("client write failed: {e}");
     }
@@ -276,6 +291,7 @@ impl Daemon {
         }
         // Claim the microphone before the (awaited) start-up so another
         // connection cannot slip in.
+        let (preview, preview_stopped) = oneshot::channel();
         let claimed = {
             let mut active = self.active.lock();
             if active.is_some() {
@@ -285,6 +301,7 @@ impl Daemon {
                     owner: conn,
                     lang: lang.to_string(),
                     recording: None,
+                    preview,
                 });
                 true
             }
@@ -319,9 +336,10 @@ impl Daemon {
             return;
         }
         debug!("first audio after {} ms", started.elapsed().as_millis());
+        let recording = Arc::new(recording);
         let kept = match self.active.lock().as_mut() {
             Some(a) if a.owner == conn => {
-                a.recording = Some(recording);
+                a.recording = Some(Arc::clone(&recording));
                 true
             }
             _ => false,
@@ -331,6 +349,15 @@ impl Daemon {
             return;
         }
         ok(w, id, "").await;
+        if self.cfg.partial_interval_ms > 0 {
+            let daemon = Arc::clone(self);
+            let (w, id, lang) = (Arc::clone(w), id.to_string(), lang.to_string());
+            tokio::spawn(async move {
+                daemon
+                    .preview(&w, &id, &lang, &recording, preview_stopped)
+                    .await
+            });
+        }
     }
 
     /// Drops the capture owned by `conn`, if any. Returns whether one existed.
@@ -365,12 +392,14 @@ impl Daemon {
         let Some(Active {
             lang,
             recording: Some(recording),
+            preview,
             ..
         }) = taken
         else {
             err(w, id, "not-recording").await;
             return;
         };
+        drop(preview);
         self.capture_stop();
         let daemon = Arc::clone(self);
         let w = Arc::clone(w);
@@ -387,7 +416,7 @@ impl Daemon {
         w: &Writer,
         id: &str,
         lang: &str,
-        recording: Recording,
+        recording: Arc<Recording>,
         context: &str,
     ) {
         let started = Instant::now();
@@ -466,6 +495,11 @@ impl Daemon {
             }
             None => samples,
         };
+        self.decode_speech(lang, samples).await.map(Some)
+    }
+
+    /// Returns the result language and its text.
+    async fn decode_speech(&self, lang: &str, samples: Vec<f32>) -> Result<(String, String)> {
         let samples = Arc::new(samples);
         if lang == AUTO_LANG {
             let auto = &self.cfg.auto;
@@ -474,10 +508,115 @@ impl Daemon {
                 self.decode_one(&auto.fallback, Arc::clone(&samples)),
             );
             let result = asr::decide_auto(&self.cfg, &detected?, &fallback?);
-            return Ok(Some((result.lang, result.text)));
+            return Ok((result.lang, result.text));
         }
         let transcript = self.decode_one(lang, samples).await?;
-        Ok(Some((lang.to_string(), transcript.text)))
+        Ok((lang.to_string(), transcript.text))
+    }
+
+    /// Pushes a display-only transcript of the capture until `stopped`'s
+    /// sender is dropped.
+    async fn preview(
+        &self,
+        w: &Writer,
+        id: &str,
+        lang: &str,
+        recording: &Recording,
+        mut stopped: oneshot::Receiver<()>,
+    ) {
+        let period = Duration::from_millis(self.cfg.partial_interval_ms);
+        let mut ticks = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+        // A decode that outlasts the period skips ticks instead of queueing them.
+        ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        let mut committed = Committed::default();
+        let mut shown = String::new();
+        loop {
+            let tick = async {
+                ticks.tick().await;
+                self.preview_tick(lang, recording, &mut committed).await
+            };
+            let text = tokio::select! {
+                _ = &mut stopped => return,
+                text = tick => text,
+            };
+            let text = match text {
+                Ok(text) if text != shown => text,
+                Ok(_) => continue,
+                Err(e) => {
+                    debug!("preview failed: {e:#}");
+                    continue;
+                }
+            };
+            let mut out = w.lock().await;
+            // STOP and CANCEL drop the sender before they reply, so checking
+            // under the writer lock keeps every PARTIAL ahead of the reply.
+            if stopped.try_recv() != Err(oneshot::error::TryRecvError::Empty) {
+                return;
+            }
+            write_line(&mut out, format!("{id} PARTIAL {text}").trim_end().to_string()).await;
+            shown = text;
+        }
+    }
+
+    /// Re-decodes the uncommitted tail; a tail longer than
+    /// PREVIEW_TAIL_SECONDS is first committed up to its last pause so the
+    /// per-tick cost stays bounded.
+    async fn preview_tick(
+        &self,
+        lang: &str,
+        recording: &Recording,
+        committed: &mut Committed,
+    ) -> Result<String> {
+        let started = Instant::now();
+        let tail = asr::pcm16_to_f32(&recording.snapshot(committed.samples));
+        if asr::is_silent(&tail) {
+            return Ok(committed.text.clone());
+        }
+        let Some(gate) = self.gate.clone() else {
+            return Ok(self.decode_speech(lang, tail).await?.1);
+        };
+        let rate = self.cfg.sample_rate as f32;
+        let vad = Arc::clone(&gate);
+        let (mut tail, mut segments) = tokio::task::spawn_blocking(move || {
+            let segments = vad.segments(&tail);
+            (tail, segments)
+        })
+        .await
+        .context("VAD task")?;
+        let mut decoded = 0;
+        let min_after = (PREVIEW_MIN_AFTER_SECONDS * rate) as usize;
+        let cut = (tail.len() as f32 > PREVIEW_TAIL_SECONDS * rate)
+            .then(|| asr::last_pause(&segments, tail.len(), min_after))
+            .flatten();
+        if let Some(cut) = cut {
+            let rest = tail.split_off(cut);
+            let after = segments.partition_point(|s| s.1 <= cut);
+            let rest_segments = segments.split_off(after);
+            if let Some(span) = gate.span(tail.len(), &segments) {
+                decoded += span.len();
+                let (_, text) = self.decode_speech(lang, asr::keep(tail, span)).await?;
+                committed.text = asr::join(&committed.text, &text);
+            }
+            committed.samples += cut;
+            tail = rest;
+            segments = rest_segments.iter().map(|&(s, e)| (s - cut, e - cut)).collect();
+        }
+        let captured = committed.samples + tail.len();
+        let text = match gate.span(tail.len(), &segments) {
+            Some(span) => {
+                decoded += span.len();
+                self.decode_speech(lang, asr::keep(tail, span)).await?.1
+            }
+            None => String::new(),
+        };
+        debug!(
+            "preview: {:.1}s captured, {:.1}s committed, {:.1}s decoded in {:.2}s",
+            captured as f32 / rate,
+            committed.samples as f32 / rate,
+            decoded as f32 / rate,
+            started.elapsed().as_secs_f32()
+        );
+        Ok(asr::join(&committed.text, &text))
     }
 
     async fn decode_one(
@@ -494,6 +633,13 @@ impl Daemon {
         transcript.text = asr::sanitize(&transcript.text);
         Ok(transcript)
     }
+}
+
+/// Preview audio before `samples` is settled as `text` and never decoded again.
+#[derive(Default)]
+struct Committed {
+    samples: usize,
+    text: String,
 }
 
 /// Returns the listening socket and whether we own the filesystem path.

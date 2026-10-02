@@ -69,7 +69,12 @@ impl Recording {
         }
     }
 
-    pub fn take_pcm(self) -> Vec<i16> {
+    /// Copy of the samples captured so far, from `from` on; capture continues.
+    pub fn snapshot(&self, from: usize) -> Vec<i16> {
+        self.sink.pcm.lock().get(from..).map_or_else(Vec::new, <[i16]>::to_vec)
+    }
+
+    pub fn take_pcm(&self) -> Vec<i16> {
         std::mem::take(&mut *self.sink.pcm.lock())
     }
 }

@@ -24,6 +24,8 @@ public:
     /// Called exactly once per request: ok=false carries the ERR message or a
     /// transport failure description.
     using Reply = std::function<void(bool ok, std::string payload)>;
+    /// Receives the payload of each `<id> PARTIAL <payload>` event line.
+    using Event = std::function<void(std::string payload)>;
 
     ParakeetClient(EventLoop &loop, std::string socketPath);
     ~ParakeetClient();
@@ -32,10 +34,15 @@ public:
     const std::string &socketPath() const { return socketPath_; }
     bool connected() const { return fd_.isValid(); }
 
-    /// Sends "<id> COMMAND [arg]". Returns false (without invoking reply) when
-    /// the daemon socket cannot be reached. The reply fails with "timeout"
-    /// if nothing arrives within timeoutUsec.
-    bool request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec);
+    /// Sends "<id> COMMAND [arg]" and returns the id, or 0 (without invoking
+    /// reply) when the daemon socket cannot be reached. The reply fails with
+    /// "timeout" if nothing arrives within timeoutUsec. onEvent, if set,
+    /// receives this id's events, which outlive the reply, until
+    /// unsubscribe(id) or disconnect().
+    uint64_t request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec,
+                     Event onEvent = {});
+
+    void unsubscribe(uint64_t id) { events_.erase(id); }
 
     /// Drops the connection; pending replies fail with the given reason.
     void disconnect(const std::string &reason);
@@ -59,6 +66,7 @@ private:
     std::string inbuf_;
     uint64_t nextId_ = 1;
     std::unordered_map<uint64_t, Pending> pending_;
+    std::unordered_map<uint64_t, Event> events_;
 };
 
 /// $XDG_RUNTIME_DIR/parakeetd.sock (falls back to /run/user/<uid>).
