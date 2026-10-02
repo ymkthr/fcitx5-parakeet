@@ -35,3 +35,13 @@ num_threads = 4
 detector = "en"
 fallback = "ja"
 threshold = -0.35
+
+# Japanese homophone correction: the jinen-v2-small kana-kanji model re-converts
+# the transcript's reading, using the text before the cursor as context, and
+# replaces the transcript only when its conversion is more likely by `margin`
+# nats. Disabled automatically when the model file is missing.
+[correction]
+# enabled = true
+# model = "~/.local/share/parakeetd/models/jinen-v2-small/jinen-v2-small-Q5_K_M.gguf"
+# margin = 4.0
+# num_threads = 4

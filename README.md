@@ -49,7 +49,7 @@ sudo dnf install ./packaging/dist/fcitx5-parakeet-*.rpm
 このスクリプトは次の処理を行います。
 
 1. Rust製デーモンとfcitx5アドオンをビルドしてインストールする。
-2. 日本語モデル、英語モデル、Silero VADモデルをダウンロードする。
+2. 日本語モデル、英語モデル、Silero VADモデル、かな漢字変換モデルjinen-v2-smallをダウンロードする。
 3. ユーザー用systemd socketを有効にする。
 4. fcitx5が動作していれば再起動して、新しいモジュールを読み込む。
 5. GNOMEでは、CapsLockをMenuキーとして扱うXKBオプション`caps:menu`を追加する。
@@ -122,6 +122,30 @@ KDEの場合はシステム設定からキーボードの設定を開き、キ�
 
 ログイン後最初の音声入力は、デーモンが初回にモデルを読み込むため、数秒余分に時間がかかることがあります。
 
+## 日本語の同音異義語補正
+
+日本語の認識結果は「機会」と「機械」のような同音異義語を取り違えることがあります。
+デーモンは認識結果を読みに戻し、かな漢字変換モデル[jinen-v2-small](https://huggingface.co/togatogah/jinen-v2-small.gguf)で変換し直します。
+このときカーソルより前にある最大64文字を文脈として使います。
+文脈はアプリが周辺テキストを提供している場合だけ送られ、ログには残りません。
+
+変換結果のほうが認識結果よりモデルにとって明らかにもっともらしい場合だけ、認識結果を置き換えます。
+録音した96件の発話では、6件の誤りが直り、正しかった結果が崩れたものはありませんでした。
+補正にかかる時間は1回あたり約50ミリ秒です（4スレッドのCPU）。
+
+モデル（約80MB）は`parakeetd-download-models`（リポジトリでは`scripts/download-models.sh`）が`~/.local/share/parakeetd/models/jinen-v2-small/`へダウンロードします。
+モデルファイルがなければ補正は無効になり、認識結果をそのまま入力します。
+
+補正を止めるには、`~/.config/parakeetd/config.toml`に次を書きます。
+
+```toml
+[correction]
+enabled = false
+```
+
+`margin`は置き換えに必要な対数尤度の差（nat単位、既定値4.0）です。
+大きくすると置き換えが減り、小さくすると増えます。
+
 ## 設定
 
 `fcitx5-configtool`を開き、アドオン（Addons）から「Parakeet Voice Input」を選ぶと設定できます。
@@ -161,7 +185,9 @@ fcitx5-parakeet本体はMITライセンスです（`LICENSE`）。
 
 パッケージには音声認識ライブラリとして[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache License 2.0、`LICENSE-APACHE-2.0`）と[ONNX Runtime](https://github.com/microsoft/onnxruntime)（MITライセンス）の共有ライブラリを同梱しています。
 
-インストール時にダウンロードするNVIDIA Parakeetの音声認識モデルは[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)、Silero VADのモデルはMITライセンスで配布されています。
+インストール時にダウンロードするNVIDIA Parakeetの音声認識モデルは[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)、Silero VADのモデルはMITライセンス、jinen-v2-smallは[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)で配布されています。
 モデルはパッケージには含まれません。
+
+デーモンにはかな漢字変換の推論に使う[llama.cpp](https://github.com/ggml-org/llama.cpp)（MITライセンス）と、読みを求めるためのIPADIC辞書（`licenses/ipadic.LICENSE`）を組み込んでいます。
 
 同梱物と依存物の一覧は`THIRD_PARTY_NOTICES.md`にあります。

@@ -32,6 +32,8 @@ constexpr uint64_t kStartTimeoutUsec = 10 * kUsec;
 // Transcription of a 120 s capture stays well under this on CPU.
 constexpr uint64_t kStopTimeoutUsec = 60 * kUsec;
 constexpr uint64_t kCancelTimeoutUsec = 5 * kUsec;
+// Context length the jinen-v2 model card uses; parakeetd truncates to the same.
+constexpr size_t kContextChars = 64;
 
 /// English dictation appended to existing text needs a word separator; the
 /// models return transcripts without a leading space.
@@ -50,6 +52,30 @@ bool needsLeadingSpace(InputContext *ic) {
     }
     const char before = text[static_cast<size_t>(offset) - 1];
     return before != ' ' && before != '\n' && before != '\t';
+}
+
+/// Text before the cursor, sent with STOP so parakeetd can pick homophones
+/// that fit what is already written. Kept on one protocol line.
+std::string contextBeforeCursor(InputContext *ic) {
+    if (!ic->capabilityFlags().test(CapabilityFlag::SurroundingText)) {
+        return {};
+    }
+    const auto &surrounding = ic->surroundingText();
+    if (!surrounding.isValid()) {
+        return {};
+    }
+    const std::string &text = surrounding.text();
+    const size_t cursor = surrounding.cursor();
+    const size_t length = utf8::lengthValidated(text);
+    if (length == utf8::INVALID_LENGTH || cursor > length) {
+        return {};
+    }
+    const size_t first = cursor > kContextChars ? cursor - kContextChars : 0;
+    const auto begin = utf8::nextNChar(text.begin(), first);
+    std::string context(begin, utf8::nextNChar(begin, cursor - first));
+    std::replace_if(
+        context.begin(), context.end(), [](char c) { return c == '\r' || c == '\n' || c == '\t'; }, ' ');
+    return context;
 }
 
 /// The active input method is composing (e.g. kana awaiting conversion);
@@ -213,7 +239,7 @@ void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
 
     auto ref = ic->watch();
     const bool sent = client_->request(
-        "STOP", "",
+        "STOP", contextBeforeCursor(ic),
         [this, ref](bool ok, std::string payload) {
             auto *ic = ref.get();
             if (!ic) {

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use log::info;
 use serde::Deserialize;
 
 pub const DEFAULT_SAMPLE_RATE: i32 = 16000;
@@ -72,6 +73,16 @@ pub struct AutoConfig {
     pub threshold: f32,
 }
 
+/// Homophone correction of Japanese transcripts with the jinen-v2 kana-kanji
+/// model; see `correct.rs`.
+#[derive(Debug, Clone)]
+pub struct CorrectionConfig {
+    pub model: PathBuf,
+    /// Nats by which the model's own conversion must beat the transcript.
+    pub margin: f32,
+    pub num_threads: i32,
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
     pub socket_path: PathBuf,
@@ -87,6 +98,8 @@ pub struct Config {
     /// does not pay onnxruntime's first-run cost.
     pub warmup: bool,
     pub auto: AutoConfig,
+    /// None when disabled or the model is not installed.
+    pub correction: Option<CorrectionConfig>,
 }
 
 impl Config {
@@ -136,6 +149,15 @@ struct RawAuto {
 }
 
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct RawCorrection {
+    enabled: Option<bool>,
+    model: Option<PathBuf>,
+    margin: Option<f32>,
+    num_threads: Option<i32>,
+}
+
+#[derive(Deserialize, Default)]
 struct Raw {
     socket_path: Option<PathBuf>,
     #[serde(default)]
@@ -149,6 +171,8 @@ struct Raw {
     warmup: Option<bool>,
     #[serde(default)]
     auto: RawAuto,
+    #[serde(default)]
+    correction: RawCorrection,
 }
 
 fn default_models() -> BTreeMap<String, ModelConfig> {
@@ -173,6 +197,30 @@ fn default_models() -> BTreeMap<String, ModelConfig> {
             mk("en", "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"),
         ),
     ])
+}
+
+fn correction(raw: RawCorrection) -> Result<Option<CorrectionConfig>> {
+    if !raw.enabled.unwrap_or(true) {
+        return Ok(None);
+    }
+    let margin = raw.margin.unwrap_or(4.0);
+    if !margin.is_finite() {
+        anyhow::bail!("correction.margin must be a finite number");
+    }
+    let model = raw.model.map(|p| expand_home(&p)).unwrap_or_else(|| {
+        default_models_dir()
+            .join("jinen-v2-small")
+            .join("jinen-v2-small-Q5_K_M.gguf")
+    });
+    if !model.is_file() {
+        info!("Japanese correction disabled: {} not found", model.display());
+        return Ok(None);
+    }
+    Ok(Some(CorrectionConfig {
+        model,
+        margin,
+        num_threads: raw.num_threads.unwrap_or(4),
+    }))
 }
 
 pub fn load(path: Option<&Path>) -> Result<Config> {
@@ -240,6 +288,7 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
             fallback: raw.auto.fallback.unwrap_or_else(|| "ja".into()),
             threshold: raw.auto.threshold.unwrap_or(-0.35),
         },
+        correction: correction(raw.correction)?,
     })
 }
 
@@ -266,5 +315,40 @@ mod tests {
         assert_eq!(raw.models["ja"].num_threads, Some(2));
         assert_eq!(raw.auto.threshold, Some(-0.5));
         assert!(matches!(&raw.vad_model, Some(toml::Value::String(s)) if s.is_empty()));
+    }
+
+    /// Loads `toml` from a scratch file; `{model}` expands to an existing file.
+    fn load_with_model(name: &str, toml: &str) -> Config {
+        let dir = std::env::temp_dir().join(format!("parakeetd-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let model = dir.join("model.gguf");
+        std::fs::write(&model, b"").unwrap();
+        let config = dir.join("config.toml");
+        std::fs::write(&config, toml.replace("{model}", &model.display().to_string())).unwrap();
+        let cfg = load(Some(&config)).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        cfg
+    }
+
+    #[test]
+    fn correction_defaults_when_model_present() {
+        let cfg = load_with_model("correction-defaults", "[correction]\nmodel = \"{model}\"\n");
+        let c = cfg.correction.expect("correction enabled");
+        assert_eq!(c.margin, 4.0);
+        assert_eq!(c.num_threads, 4);
+    }
+
+    #[test]
+    fn correction_disabled_explicitly_or_without_model() {
+        let off = load_with_model(
+            "correction-off",
+            "[correction]\nenabled = false\nmodel = \"{model}\"\n",
+        );
+        assert!(off.correction.is_none());
+        let missing = load_with_model(
+            "correction-missing",
+            "[correction]\nmodel = \"/nonexistent/jinen.gguf\"\n",
+        );
+        assert!(missing.correction.is_none());
     }
 }

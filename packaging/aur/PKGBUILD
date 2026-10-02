@@ -5,8 +5,9 @@ pkgrel=1
 pkgdesc="Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet"
 arch=(x86_64)
 url="https://github.com/ymkthr/fcitx5-parakeet"
-# MIT: this project and ONNX Runtime; Apache-2.0: the bundled sherpa-onnx libraries.
-license=(MIT Apache-2.0)
+# MIT: this project, ONNX Runtime and llama.cpp; Apache-2.0: the bundled sherpa-onnx
+# libraries; IPADIC: the dictionary embedded in parakeetd.
+license=(MIT Apache-2.0 LicenseRef-IPADIC)
 depends=(fcitx5 pipewire gcc-libs)
 makedepends=(cargo clang cmake extra-cmake-modules gettext)
 optdepends=('curl: parakeetd-download-models fetches the speech models')
@@ -55,4 +56,5 @@ package() {
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 LICENSE-APACHE-2.0 "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE-2.0"
   install -Dm644 licenses/onnxruntime.LICENSE "$pkgdir/usr/share/licenses/$pkgname/onnxruntime.LICENSE"
+  install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" licenses/llama.cpp.LICENSE licenses/ipadic.LICENSE
 }

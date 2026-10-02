@@ -18,4 +18,6 @@ License: Apache-2.0
  .
  The binary package bundles libsherpa-onnx-c-api.so and libsherpa-onnx-cxx-api.so
  (Apache-2.0) and libonnxruntime.so (MIT, see onnxruntime.LICENSE) under
- /usr/lib/parakeetd. Details in THIRD_PARTY_NOTICES.md.
+ /usr/lib/parakeetd. parakeetd statically links llama.cpp (MIT, see
+ llama.cpp.LICENSE) and embeds the IPADIC dictionary (see ipadic.LICENSE).
+ Details in THIRD_PARTY_NOTICES.md.

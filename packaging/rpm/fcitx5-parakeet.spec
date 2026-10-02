@@ -5,15 +5,16 @@ Name:           fcitx5-parakeet
 Version:        0.3.0
 Release:        1%{?dist}
 Summary:        Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet
-# MIT: this project and ONNX Runtime; Apache-2.0: the bundled sherpa-onnx libraries.
-License:        MIT AND Apache-2.0
+# MIT: this project, ONNX Runtime and llama.cpp; Apache-2.0: the bundled
+# sherpa-onnx libraries; IPADIC: the dictionary embedded in parakeetd.
+License:        MIT AND Apache-2.0 AND LicenseRef-IPADIC
 URL:            https://github.com/ymkthr/fcitx5-parakeet
 Source0:        %{name}-%{version}.tar.gz
 Source1:        https://github.com/k2-fsa/sherpa-onnx/releases/download/v%{sherpa_version}/%{sherpa_archive}.tar.bz2
 ExclusiveArch:  x86_64
 
-BuildRequires:  cargo
-BuildRequires:  rust
+BuildRequires:  cargo >= 1.88
+BuildRequires:  rust >= 1.88
 BuildRequires:  clang-devel
 BuildRequires:  cmake
 BuildRequires:  gcc-c++
@@ -61,6 +62,8 @@ packaging/stage.sh %{buildroot} "$PWD/%{sherpa_archive}/lib" %{_libdir} %{_licen
 %license %{_licensedir}/%{name}/LICENSE
 %license %{_licensedir}/%{name}/LICENSE-APACHE-2.0
 %license %{_licensedir}/%{name}/onnxruntime.LICENSE
+%license %{_licensedir}/%{name}/llama.cpp.LICENSE
+%license %{_licensedir}/%{name}/ipadic.LICENSE
 %doc %{_docdir}/%{name}/THIRD_PARTY_NOTICES.md
 %doc %{_docdir}/%{name}/config.example.toml
 %{_bindir}/parakeetd
