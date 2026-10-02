@@ -137,6 +137,7 @@ KDEの場合はシステム設定からキーボードの設定を開き、キ�
 
 モデル（約80MB）は`parakeetd-download-models`（リポジトリでは`scripts/download-models.sh`）が`~/.local/share/parakeetd/models/jinen-v2-small/`へダウンロードします。
 モデルファイルがなければ補正は無効になり、認識結果をそのまま入力します。
+補正にはAVX2、FMA、F16C、BMI2に対応したCPU（Intel Haswell、AMD Excavator以降）が必要で、対応していないCPUでは補正を自動で無効にします。
 
 補正を止めるには、`~/.config/parakeetd/config.toml`に次を書きます。
 

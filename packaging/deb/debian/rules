@@ -5,6 +5,14 @@ export DH_VERBOSE = 1
 export CARGO_HOME = $(CURDIR)/debian/cargo-home
 export SHERPA_ONNX_LIB_DIR = $(SHERPA_ONNX_DIR)/lib
 export SHERPA_ONNX_RPATH = /usr/lib/parakeetd
+# ggml turns every SIMD option off when SOURCE_DATE_EPOCH is set, which
+# dpkg-buildpackage always does; parakeetd checks for these at start-up.
+export GGML_SSE42 = ON
+export GGML_AVX = ON
+export GGML_AVX2 = ON
+export GGML_BMI2 = ON
+export GGML_FMA = ON
+export GGML_F16C = ON
 
 PKG = fcitx5-parakeet
 DEST = $(CURDIR)/debian/$(PKG)

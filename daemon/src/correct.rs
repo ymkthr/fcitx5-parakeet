@@ -54,6 +54,25 @@ fn backend() -> Result<&'static LlamaBackend> {
         .map_err(|e| anyhow!("llama.cpp backend: {e}"))
 }
 
+/// Packages build llama.cpp for x86-64-v3 (AVX2, FMA, F16C, BMI2): without
+/// those a correction takes about a second instead of tens of milliseconds,
+/// and on an older CPU it would die with an illegal instruction.
+pub fn cpu_supported() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let ok = is_x86_feature_detected!("avx2")
+            && is_x86_feature_detected!("fma")
+            && is_x86_feature_detected!("f16c")
+            && is_x86_feature_detected!("bmi2");
+        if !ok {
+            info!("Japanese correction disabled: the CPU lacks AVX2/FMA/F16C/BMI2");
+        }
+        ok
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    true
+}
+
 struct Loaded {
     model: LlamaModel,
     segmenter: Segmenter,

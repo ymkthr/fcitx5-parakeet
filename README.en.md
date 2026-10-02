@@ -137,6 +137,7 @@ A correction takes about 50 ms on 4 CPU threads.
 
 `parakeetd-download-models` (`scripts/download-models.sh` in the repository) downloads the model (about 80 MB) into `~/.local/share/parakeetd/models/jinen-v2-small/`.
 Without the model file, correction is disabled and transcripts are typed as recognized.
+Correction needs a CPU with AVX2, FMA, F16C and BMI2 (Intel Haswell, AMD Excavator or later); on other CPUs it is disabled automatically.
 
 To turn correction off, add the following to `~/.config/parakeetd/config.toml`.
 
