@@ -19,6 +19,11 @@
 # fillers such as "うん" from room noise. An empty string disables it.
 # vad_model = "~/.local/share/parakeetd/models/silero_vad.onnx"
 
+# While recording, re-transcribe the audio so far this often (milliseconds) and
+# show it as a preview near the cursor. The committed text still comes from
+# the whole capture. 0 disables the preview.
+# partial_interval_ms = 500
+
 [models.ja]
 dir = "~/.local/share/parakeetd/models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8"
 # kind = "nemo_ctc"

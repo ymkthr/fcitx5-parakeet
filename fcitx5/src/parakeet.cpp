@@ -34,6 +34,8 @@ constexpr uint64_t kStopTimeoutUsec = 60 * kUsec;
 constexpr uint64_t kCancelTimeoutUsec = 5 * kUsec;
 // Context length the jinen-v2 model card uses; parakeetd truncates to the same.
 constexpr size_t kContextChars = 64;
+// Keeps the live transcript to one short line near the cursor.
+constexpr size_t kPartialChars = 40;
 
 /// English dictation appended to existing text needs a word separator; the
 /// models return transcripts without a leading space.
@@ -83,6 +85,22 @@ std::string contextBeforeCursor(InputContext *ic) {
 bool composing(InputContext *ic) {
     const auto &panel = ic->inputPanel();
     return panel.clientPreedit().size() > 0 || panel.preedit().size() > 0;
+}
+
+/// The status cue followed by the end of the live transcript, if any.
+std::string withPartial(std::string cue, const std::string &partial) {
+    const size_t length = utf8::lengthValidated(partial);
+    if (partial.empty() || length == utf8::INVALID_LENGTH) {
+        return cue;
+    }
+    cue += ' ';
+    if (length > kPartialChars) {
+        cue += "…";
+        cue.append(utf8::nextNChar(partial.begin(), length - kPartialChars), partial.end());
+    } else {
+        cue += partial;
+    }
+    return cue;
 }
 
 } // namespace
@@ -200,11 +218,12 @@ void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
     state->recording = true;
     state->live = false;
     state->locked = false;
+    state->partial.clear();
     const uint64_t session = ++state->session;
     updateStatus(ic, state);
 
     auto ref = ic->watch();
-    const bool sent = client_->request(
+    state->startRequest = client_->request(
         "START", *config_.language,
         [this, ref, session](bool ok, std::string payload) {
             auto *ic = ref.get();
@@ -221,12 +240,25 @@ void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
                 updateStatus(ic, state);
                 return;
             }
+            client_->unsubscribe(state->startRequest);
             state->recording = false;
             state->locked = false;
             failStatus(ic, payload);
         },
-        kStartTimeoutUsec);
-    if (!sent) {
+        kStartTimeoutUsec,
+        [this, ref, session](std::string text) {
+            auto *ic = ref.get();
+            if (!ic) {
+                return;
+            }
+            auto *state = ic->propertyFor(&factory_);
+            if (state->session != session || !state->recording) {
+                return;
+            }
+            state->partial = std::move(text);
+            updateStatus(ic, state);
+        });
+    if (state->startRequest == 0) {
         state->recording = false;
         failStatus(ic, _("parakeetd is not running"));
     }
@@ -234,11 +266,12 @@ void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
 
 void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
     state->recording = false;
+    client_->unsubscribe(state->startRequest);
     ++state->pendingResults;
     updateStatus(ic, state);
 
     auto ref = ic->watch();
-    const bool sent = client_->request(
+    const uint64_t sent = client_->request(
         "STOP", contextBeforeCursor(ic),
         [this, ref](bool ok, std::string payload) {
             auto *ic = ref.get();
@@ -247,6 +280,9 @@ void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
             }
             auto *state = ic->propertyFor(&factory_);
             state->pendingResults = std::max(0, state->pendingResults - 1);
+            if (state->pendingResults == 0 && !state->recording) {
+                state->partial.clear();
+            }
             if (!ok) {
                 failStatus(ic, payload);
                 return;
@@ -266,7 +302,7 @@ void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
             ic->commitString(text);
         },
         kStopTimeoutUsec);
-    if (!sent) {
+    if (sent == 0) {
         state->pendingResults = std::max(0, state->pendingResults - 1);
         failStatus(ic, _("parakeetd is not running"));
     }
@@ -275,6 +311,8 @@ void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
 void ParakeetModule::cancelRecording(InputContext *ic, ParakeetState *state) {
     state->recording = false;
     ++state->session;
+    client_->unsubscribe(state->startRequest);
+    state->partial.clear();
     updateStatus(ic, state);
     client_->request(
         "CANCEL", "",
@@ -299,9 +337,9 @@ void ParakeetModule::updateStatus(InputContext *ic, const ParakeetState *state) 
         return;
     }
     if (state->recording) {
-        showAux(ic, state->live ? "🎙️" : "");
+        showAux(ic, state->live ? withPartial("🎙️", state->partial) : "");
     } else if (state->pendingResults > 0) {
-        showAux(ic, "…");
+        showAux(ic, withPartial("…", state->partial));
     } else {
         showAux(ic, {});
     }

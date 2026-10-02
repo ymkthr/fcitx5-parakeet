@@ -84,6 +84,7 @@ void ParakeetClient::disconnect(const std::string &reason) {
     ioEvent_.reset();
     fd_.reset();
     inbuf_.clear();
+    events_.clear();
     if (pending_.empty()) {
         return;
     }
@@ -112,9 +113,10 @@ bool ParakeetClient::writeAll(std::string_view data) {
     return true;
 }
 
-bool ParakeetClient::request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec) {
+uint64_t ParakeetClient::request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec,
+                                 Event onEvent) {
     if (!ensureConnected()) {
-        return false;
+        return 0;
     }
     const uint64_t id = nextId_++;
     std::string line = std::to_string(id);
@@ -127,7 +129,7 @@ bool ParakeetClient::request(std::string_view command, std::string_view arg, Rep
     line += '\n';
     if (!writeAll(line)) {
         disconnect("write failed");
-        return false;
+        return 0;
     }
     auto timer = loop_.addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + timeoutUsec, 0,
                                     [this, id](EventSourceTime *source, uint64_t) {
@@ -136,7 +138,10 @@ bool ParakeetClient::request(std::string_view command, std::string_view arg, Rep
                                         return true;
                                     });
     pending_.emplace(id, Pending{std::move(reply), std::move(timer)});
-    return true;
+    if (onEvent) {
+        events_.emplace(id, std::move(onEvent));
+    }
+    return id;
 }
 
 void ParakeetClient::settle(uint64_t id, bool ok, std::string payload) {
@@ -199,6 +204,15 @@ void ParakeetClient::handleLine(std::string_view line) {
     const std::string_view status = rest.substr(0, statusEnd);
     const std::string_view payload = statusEnd == std::string_view::npos ? std::string_view{} : rest.substr(statusEnd + 1);
 
+    if (status == "PARTIAL") {
+        auto it = events_.find(id);
+        if (it != events_.end()) {
+            // Copied: the handler may unsubscribe or disconnect.
+            Event handler = it->second;
+            handler(std::string(payload));
+        }
+        return;
+    }
     settle(id, status == "OK", std::string(payload));
 }
 
