@@ -12,7 +12,9 @@ depends=(fcitx5 pipewire gcc-libs)
 makedepends=(cargo clang cmake extra-cmake-modules gettext)
 optdepends=('curl: parakeetd-download-models fetches the speech models')
 install=$pkgname.install
-options=(!debug)
+# makepkg's -flto turns ring's C objects (built for lindera's IPADIC download)
+# into GCC bitcode that rust-lld cannot link.
+options=(!debug !lto)
 
 _sherpa_version=1.13.7
 _sherpa_archive="sherpa-onnx-v${_sherpa_version}-linux-x64-shared-no-tts"
