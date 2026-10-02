@@ -49,7 +49,7 @@ Run the installer from the repository root.
 The installer performs the following steps:
 
 1. Builds and installs the Rust daemon and fcitx5 addon.
-2. Downloads the Japanese, English, and Silero VAD models.
+2. Downloads the Japanese, English, and Silero VAD models, and the jinen-v2-small kana-kanji model.
 3. Enables the systemd user socket.
 4. Restarts fcitx5, if it is running, so the new module loads.
 5. On GNOME, adds the XKB option `caps:menu` so CapsLock acts as the Menu key.
@@ -122,6 +122,30 @@ You can also pin it to `ja` or `en` in the configuration.
 
 The first dictation after login can take a few seconds longer, because the daemon loads its models on first use.
 
+## Japanese homophone correction
+
+Japanese transcripts sometimes pick the wrong homophone, such as 機会 for 機械.
+The daemon turns the transcript back into its reading and converts it again with the kana-kanji model [jinen-v2-small](https://huggingface.co/togatogah/jinen-v2-small.gguf).
+The conversion uses up to 64 characters before the cursor as context.
+The context is sent only when the application provides surrounding text, and it is never logged.
+
+The transcript is replaced only when the model finds its own conversion clearly more likely than the transcript.
+On 96 recorded utterances this fixed 6 errors and broke no correct transcript.
+A correction takes about 50 ms on 4 CPU threads.
+
+`parakeetd-download-models` (`scripts/download-models.sh` in the repository) downloads the model (about 80 MB) into `~/.local/share/parakeetd/models/jinen-v2-small/`.
+Without the model file, correction is disabled and transcripts are typed as recognized.
+
+To turn correction off, add the following to `~/.config/parakeetd/config.toml`.
+
+```toml
+[correction]
+enabled = false
+```
+
+`margin` is the log-likelihood difference, in nats, that a conversion needs to replace the transcript (default 4.0).
+Larger values replace less often, smaller values more often.
+
 ## Configuration
 
 Open `fcitx5-configtool`, go to Addons, and select "Parakeet Voice Input" to configure it.
@@ -161,7 +185,9 @@ fcitx5-parakeet itself is released under the MIT License (`LICENSE`).
 
 The package bundles the shared libraries of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache License 2.0, `LICENSE-APACHE-2.0`) and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT License) as the speech recognition runtime.
 
-The NVIDIA Parakeet models downloaded at install time are distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), and the Silero VAD model under the MIT License.
+The NVIDIA Parakeet models downloaded at install time are distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the Silero VAD model under the MIT License, and jinen-v2-small under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 The models are not part of the package.
+
+The daemon embeds [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT License) to run the kana-kanji model and the IPADIC dictionary (`licenses/ipadic.LICENSE`) to look up readings.
 
 See `THIRD_PARTY_NOTICES.md` for the full list of bundled and downloaded components.

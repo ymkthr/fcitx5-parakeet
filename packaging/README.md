@@ -18,6 +18,8 @@ packaging/build.sh rpm                 # fedora:42
 ```
 
 sherpa-onnxのリリースアーカイブは`packaging/cache/`にキャッシュされます。
+デーモンのビルドにはRust 1.88以上が必要です。Debian trixieでは`rustc-web`と`cargo-web`を使い、それより古いRustしかないイメージではビルドできません。
+ビルド中に`lindera-ipadic`がIPADIC辞書（約13MB）をダウンロードするため、ネットワーク接続も必要です。
 バージョンを上げるときは`daemon/Cargo.toml`、`fcitx5/CMakeLists.txt`、各PKGBUILDに加えて`deb/debian/changelog`と`rpm/fcitx5-parakeet.spec`も揃えます。
 
 ビルドしたパッケージのインストールは通常どおりです。

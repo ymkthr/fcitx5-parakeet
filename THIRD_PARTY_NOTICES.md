@@ -21,10 +21,27 @@ following third-party components.
 - Source: https://github.com/microsoft/onnxruntime
 - Files: `/usr/lib/parakeetd/libonnxruntime.so` (bundled in the sherpa-onnx release archive)
 
+### llama.cpp
+
+- Copyright (c) 2023-2026 The ggml authors
+- License: MIT License (`licenses/llama.cpp.LICENSE`)
+- Source: https://github.com/ggml-org/llama.cpp
+- Statically linked into `parakeetd` through the `llama-cpp-2` crate; runs the correction model
+
+### IPADIC (mecab-ipadic 2.7.0)
+
+- Copyright 2000-2003 Nara Institute of Science and Technology
+- License: IPADIC license (`licenses/ipadic.LICENSE`)
+- Source: https://github.com/lindera/lindera (dictionary build of mecab-ipadic-2.7.0-20250920)
+- Embedded in `parakeetd` through the `lindera-ipadic` crate; provides readings for the correction model
+
 ### Rust crates
 
-The daemon statically links the crates listed in `daemon/Cargo.lock`.
-All of them are available under MIT and/or Apache-2.0 (some additionally under Unicode-3.0 or Zlib).
+The daemon statically links the crates in `daemon/Cargo.lock` that are not
+build-time only (`cargo tree -e normal`). They are available under MIT and/or
+Apache-2.0, except the ICU4X crates (`icu_*`, `zerovec`, `yoke` and friends),
+which are under Unicode-3.0, and `encoding_rs`, which adds BSD-3-Clause for
+its data. Some crates also offer BSL-1.0, Unlicense or Zlib as alternatives.
 
 ## Downloaded at install time
 
@@ -51,3 +68,11 @@ They are not part of the package.
 - License: MIT License
 - Source: https://github.com/snakers4/silero-vad
 - Downloaded as `silero_vad.onnx` from the sherpa-onnx release assets
+
+### jinen-v2-small
+
+- Created by Hitoshi Togasaki; its training data includes bibliographic data processed from
+  the National Diet Library (国立国会図書館「全国書誌データ」), which does not endorse the model
+- License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)
+- Source: https://huggingface.co/togatogah/jinen-v2-small.gguf
+- Downloaded as `jinen-v2-small/jinen-v2-small-Q5_K_M.gguf`; corrects Japanese homophones

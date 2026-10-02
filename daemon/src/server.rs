@@ -7,7 +7,9 @@
 //!   HELLO            -> `OK parakeetd <version>`
 //!   LOAD <lang>      -> `OK` once the model(s) for <lang> are in memory
 //!   START <lang>     -> `OK` once the microphone capture is running
-//!   STOP             -> `OK <lang> <text>` after transcription (text may be empty)
+//!   STOP [context]   -> `OK <lang> <text>` after transcription (text may be empty);
+//!                       context is the text before the cursor, used to correct
+//!                       Japanese homophones
 //!   CANCEL           -> `OK` (drops the current capture)
 //!   STATUS           -> `OK recording=<0|1> loaded=<a,b> languages=<a,b>`
 //!
@@ -34,6 +36,7 @@ use tokio::task::JoinSet;
 use crate::asr::{self, Gate, Pool};
 use crate::audio::{Capture, CaptureConfig, Recording};
 use crate::config::{Config, AUTO_LANG};
+use crate::correct::Corrector;
 
 /// Seconds to wait for the first samples before declaring the microphone dead.
 const RECORDER_START_TIMEOUT: Duration = Duration::from_secs(3);
@@ -48,6 +51,7 @@ pub struct Daemon {
     cfg: Config,
     pool: Arc<Pool>,
     gate: Option<Arc<Gate>>,
+    corrector: Option<Arc<Corrector>>,
     capture: Mutex<Option<Capture>>,
     active: Mutex<Option<Active>>,
     next_conn: AtomicU64,
@@ -70,6 +74,14 @@ async fn err(w: &Writer, id: &str, message: &str) {
     send(w, format!("{id} ERR {}", asr::sanitize(message))).await;
 }
 
+/// Splits `<id> <COMMAND> [args]`; the command is case-insensitive.
+fn parse_request(line: &str) -> (&str, String, &str) {
+    let mut parts = line.splitn(3, ' ');
+    let id = parts.next().unwrap_or("0");
+    let command = parts.next().unwrap_or("").to_ascii_uppercase();
+    (id, command, parts.next().unwrap_or("").trim())
+}
+
 impl Daemon {
     pub fn new(cfg: Config) -> Arc<Self> {
         let gate = cfg.vad_model.as_ref().and_then(|path| {
@@ -82,6 +94,7 @@ impl Daemon {
             }
         });
         let pool = Arc::new(Pool::new(&cfg));
+        let corrector = cfg.correction.clone().map(|c| Arc::new(Corrector::new(c)));
         let capture = match Capture::spawn(CaptureConfig {
             sample_rate: cfg.sample_rate,
             target: cfg.target.clone(),
@@ -96,6 +109,7 @@ impl Daemon {
             cfg,
             pool,
             gate,
+            corrector,
             capture: Mutex::new(capture),
             active: Mutex::new(None),
             next_conn: AtomicU64::new(1),
@@ -110,6 +124,15 @@ impl Daemon {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => error!("preload {lang} failed: {e:#}"),
                 Err(e) => error!("preload {lang} panicked: {e}"),
+            }
+        }
+        if let Some(corrector) = self.corrector.clone() {
+            if self.cfg.preload.iter().any(|l| l == "ja") {
+                match tokio::task::spawn_blocking(move || corrector.load()).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => error!("preload correction failed: {e:#}"),
+                    Err(e) => error!("preload correction panicked: {e}"),
+                }
             }
         }
     }
@@ -157,10 +180,9 @@ impl Daemon {
         line: &str,
         background: &mut JoinSet<()>,
     ) {
-        let mut parts = line.splitn(3, ' ');
-        let id = parts.next().unwrap_or("0").to_string();
-        let command = parts.next().unwrap_or("").to_ascii_uppercase();
-        let arg = parts.next().unwrap_or("").trim().to_string();
+        let (id, command, arg) = parse_request(line);
+        let id = id.to_string();
+        let arg = arg.to_string();
 
         match command.as_str() {
             "HELLO" => ok(w, &id, &format!("parakeetd {}", env!("CARGO_PKG_VERSION"))).await,
@@ -179,7 +201,7 @@ impl Daemon {
                 background.spawn(async move { daemon.load(&w, &id, &arg).await });
             }
             "START" => self.start(conn, w, &id, &arg).await,
-            "STOP" => self.stop(conn, w, &id, background).await,
+            "STOP" => self.stop(conn, w, &id, arg, background).await,
             "CANCEL" => {
                 if self.release_if_owner(conn) {
                     ok(w, &id, "").await;
@@ -325,7 +347,14 @@ impl Daemon {
         }
     }
 
-    async fn stop(self: &Arc<Self>, conn: u64, w: &Writer, id: &str, background: &mut JoinSet<()>) {
+    async fn stop(
+        self: &Arc<Self>,
+        conn: u64,
+        w: &Writer,
+        id: &str,
+        context: String,
+        background: &mut JoinSet<()>,
+    ) {
         let taken = {
             let mut active = self.active.lock();
             match active.as_ref() {
@@ -346,10 +375,21 @@ impl Daemon {
         let daemon = Arc::clone(self);
         let w = Arc::clone(w);
         let id = id.to_string();
-        background.spawn(async move { daemon.transcribe(&w, &id, &lang, recording).await });
+        background.spawn(async move {
+            daemon
+                .transcribe(&w, &id, &lang, recording, &context)
+                .await
+        });
     }
 
-    async fn transcribe(self: &Arc<Self>, w: &Writer, id: &str, lang: &str, recording: Recording) {
+    async fn transcribe(
+        self: &Arc<Self>,
+        w: &Writer,
+        id: &str,
+        lang: &str,
+        recording: Recording,
+        context: &str,
+    ) {
         let started = Instant::now();
         let pcm = recording.take_pcm();
         let seconds = pcm.len() as f32 / self.cfg.sample_rate as f32;
@@ -360,8 +400,9 @@ impl Daemon {
         };
         match self.decode(lang, pcm).await {
             Ok(Some((result_lang, text))) => {
+                let (text, correction) = self.correct(&result_lang, text, context).await;
                 info!(
-                    "{lang}: {seconds:.1}s audio -> {result_lang} {} chars in {:.2}s",
+                    "{lang}: {seconds:.1}s audio -> {result_lang} {} chars in {:.2}s{correction}",
                     text.chars().count(),
                     started.elapsed().as_secs_f32()
                 );
@@ -374,6 +415,30 @@ impl Daemon {
             Err(e) => {
                 error!("transcribing {lang} failed: {e:#}");
                 err(w, id, &format!("transcribe failed: {e:#}")).await;
+            }
+        }
+    }
+
+    /// Returns the text to send and a log suffix describing the correction.
+    async fn correct(&self, lang: &str, text: String, context: &str) -> (String, String) {
+        let Some(corrector) = self.corrector.clone() else {
+            return (text, String::new());
+        };
+        if lang != "ja" || text.is_empty() {
+            return (text, String::new());
+        }
+        let started = Instant::now();
+        let (asr, context) = (text.clone(), context.to_string());
+        match tokio::task::spawn_blocking(move || corrector.correct(&asr, &context)).await {
+            Ok(corrected) => {
+                let corrected = asr::sanitize(&corrected);
+                let verdict = if corrected == text { "kept" } else { "changed" };
+                let elapsed = started.elapsed().as_secs_f32();
+                (corrected, format!(" (correction {verdict} in {elapsed:.2}s)"))
+            }
+            Err(e) => {
+                warn!("correction panicked: {e}");
+                (text, String::new())
             }
         }
     }
@@ -459,4 +524,18 @@ pub fn listen(path: &Path) -> Result<(UnixListener, bool)> {
     std::fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
     info!("listening on {}", path.display());
     Ok((listener, true))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stop_carries_context_with_inner_spaces() {
+        assert_eq!(
+            parse_request("7 stop 会議の 議事録を"),
+            ("7", "STOP".to_string(), "会議の 議事録を")
+        );
+        assert_eq!(parse_request("8 STOP"), ("8", "STOP".to_string(), ""));
+    }
 }

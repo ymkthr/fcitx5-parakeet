@@ -4,8 +4,8 @@ Priority: optional
 Maintainer: ymkthr <ymkthr@users.noreply.github.com>
 Rules-Requires-Root: no
 Build-Depends: debhelper-compat (= 13),
-               cargo,
-               rustc,
+               cargo-web | cargo (>= 1.88),
+               rustc-web | rustc (>= 1.88),
                clang,
                libclang-dev,
                cmake,
