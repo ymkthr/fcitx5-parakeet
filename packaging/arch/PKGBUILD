@@ -8,7 +8,9 @@ url="https://github.com/ymkthr/fcitx5-parakeet"
 # MIT: this project, ONNX Runtime and llama.cpp; Apache-2.0: the bundled sherpa-onnx
 # libraries; IPADIC: the dictionary embedded in parakeetd.
 license=(MIT Apache-2.0 LicenseRef-IPADIC)
-options=(!debug)
+# makepkg's -flto turns ring's C objects (built for lindera's IPADIC download)
+# into GCC bitcode that rust-lld cannot link.
+options=(!debug !lto)
 depends=(fcitx5 pipewire)
 makedepends=(cargo clang cmake extra-cmake-modules gettext)
 
