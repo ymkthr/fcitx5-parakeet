@@ -49,7 +49,7 @@ Run the installer from the repository root.
 The installer performs the following steps:
 
 1. Builds and installs the Rust daemon and fcitx5 addon.
-2. Downloads the Japanese, English, and Silero VAD models, and the jinen-v2-small kana-kanji model.
+2. Downloads the Japanese, English, and Silero VAD models, and for homophone correction the jinen-v2-small kana-kanji model and the TinySwallow-1.5B language model.
 3. Enables the systemd user socket.
 4. Restarts fcitx5, if it is running, so the new module loads.
 5. On GNOME, adds the XKB option `caps:menu` so CapsLock acts as the Menu key.
@@ -135,17 +135,21 @@ The first dictation after login can take a few seconds longer, because the daemo
 
 Japanese transcripts sometimes pick the wrong homophone, such as 機会 for 機械.
 The daemon turns the transcript back into its reading and converts it again with the kana-kanji model [jinen-v2-small](https://huggingface.co/togatogah/jinen-v2-small.gguf).
-The conversion uses up to 64 characters before the cursor as context.
+Each place where the conversion differs from the transcript is a candidate fix, and the language model [TinySwallow-1.5B](https://huggingface.co/SakanaAI/TinySwallow-1.5B) accepts or rejects each candidate.
+Both models use up to 64 characters before the cursor as context.
 The context is sent only when the application provides surrounding text, and it is never logged.
 Parts already inserted during a long dictation are context for the parts that follow.
 
-The transcript is replaced only when the model finds its own conversion clearly more likely than the transcript.
-Long transcripts are corrected one sentence at a time, with the preceding sentences as context.
-On 96 short synthesized utterances this fixed 3 errors, and on 22 dictations of 10 seconds to 2 minutes it rewrote no correct word.
-A correction takes about 50 ms per sentence on 4 CPU threads.
+A candidate is accepted only when the language model finds the fixed text clearly more likely than the transcript.
+The transcript is corrected in pieces, cut at sentence ends or at a phrase boundary about every 40 characters, with the preceding text as context.
+On 96 short synthesized utterances this removed errors from 12 of them (3 before the language model judged the fixes).
+On 22 dictations of 10 seconds to 2 minutes it cut character errors from 128 to 111, and on 12 plain-form paragraphs (no です/ます endings) from 39 to 32, without making any utterance worse.
+On 4 CPU threads a correction takes about 0.1 s for a short utterance, 1 s for 30 seconds of speech and 2.4 to 3.1 s for a minute.
+A long recording is cut at pauses while it continues and the parts are corrected as they are cut, so after it stops only the last part is left to correct (for a 2.5-minute recording, 7.1 s from stop to text against 4.3 s without correction).
 
-`parakeetd-download-models` (`scripts/download-models.sh` in the repository) downloads the model (about 80 MB) into `~/.local/share/parakeetd/models/jinen-v2-small/`.
-Without the model file, correction is disabled and transcripts are typed as recognized.
+`parakeetd-download-models` (`scripts/download-models.sh` in the repository) downloads the models (about 80 MB for jinen-v2-small, 940 MB for TinySwallow-1.5B) into `~/.local/share/parakeetd/models/`.
+Correction adds about 1.1 GB to the daemon's memory use.
+Without either model file, correction is disabled and transcripts are typed as recognized.
 Correction needs a CPU with AVX2, FMA, F16C and BMI2 (Intel Haswell, AMD Excavator or later); on other CPUs it is disabled automatically.
 
 To turn correction off, add the following to `~/.config/parakeetd/config.toml`.
@@ -155,8 +159,9 @@ To turn correction off, add the following to `~/.config/parakeetd/config.toml`.
 enabled = false
 ```
 
-`margin` is the log-likelihood difference, in nats, that a conversion needs to replace the transcript (default 6.0).
-Larger values replace less often, smaller values more often.
+`judge_margin` is the log-likelihood difference, in nats, that a candidate needs to be accepted (default 2.0).
+Larger values accept fewer candidates, smaller values more.
+The former `margin` setting was removed; the daemon refuses to start while the config file still contains it, so delete it.
 
 ## Configuration
 
@@ -215,9 +220,10 @@ fcitx5-parakeet itself is released under the MIT License (`LICENSE`).
 
 The package bundles the shared libraries of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache License 2.0, `LICENSE-APACHE-2.0`) and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT License) as the speech recognition runtime.
 
-The NVIDIA Parakeet models downloaded at install time are distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the Silero VAD model under the MIT License, and jinen-v2-small under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+The NVIDIA Parakeet models downloaded at install time are distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the Silero VAD model under the MIT License, jinen-v2-small under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), and TinySwallow-1.5B under the Apache License 2.0.
+The TinySwallow-1.5B model card describes the model as an experimental prototype for research and development, not intended for commercial use or mission-critical deployment, used at the user's own risk and without guaranteed performance.
 The models are not part of the package.
 
-The daemon embeds [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT License) to run the kana-kanji model and the IPADIC dictionary (`licenses/ipadic.LICENSE`) to look up readings.
+The daemon embeds [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT License) to run the correction models and the IPADIC dictionary (`licenses/ipadic.LICENSE`) to look up readings.
 
 See `THIRD_PARTY_NOTICES.md` for the full list of bundled and downloaded components.
