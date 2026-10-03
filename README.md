@@ -49,7 +49,7 @@ sudo dnf install ./packaging/dist/fcitx5-parakeet-*.rpm
 このスクリプトは次の処理を行います。
 
 1. Rust製デーモンとfcitx5アドオンをビルドしてインストールする。
-2. 日本語モデル、英語モデル、Silero VADモデル、かな漢字変換モデルjinen-v2-smallをダウンロードする。
+2. 日本語モデル、英語モデル、Silero VADモデル、同音異義語補正に使うかな漢字変換モデルjinen-v2-smallと言語モデルTinySwallow-1.5Bをダウンロードする。
 3. ユーザー用systemd socketを有効にする。
 4. fcitx5が動作していれば再起動して、新しいモジュールを読み込む。
 5. GNOMEでは、CapsLockをMenuキーとして扱うXKBオプション`caps:menu`を追加する。
@@ -135,17 +135,21 @@ KDEの場合はシステム設定からキーボードの設定を開き、キ�
 
 日本語の認識結果は「機会」と「機械」のような同音異義語を取り違えることがあります。
 デーモンは認識結果を読みに戻し、かな漢字変換モデル[jinen-v2-small](https://huggingface.co/togatogah/jinen-v2-small.gguf)で変換し直します。
+変換結果が認識結果と違う箇所はそれぞれ修正候補になり、言語モデル[TinySwallow-1.5B](https://huggingface.co/SakanaAI/TinySwallow-1.5B)が候補ごとに採否を判定します。
 このときカーソルより前にある最大64文字を文脈として使います。
 文脈はアプリが周辺テキストを提供している場合だけ送られ、ログには残りません。
 長い音声入力の途中で入力した部分も、続く部分の文脈になります。
 
-変換結果のほうが認識結果よりモデルにとって明らかにもっともらしい場合だけ、認識結果を置き換えます。
-長い文章は文ごとに区切って補正し、前の文を文脈として使います。
-合成音声で読み上げた96件の短い発話では3件の誤りが直り、10秒から2分の長い発話22件では正しかった語が書き換えられたものはありませんでした。
-補正にかかる時間は1文あたり約50ミリ秒です（4スレッドのCPU）。
+言語モデルが、修正した文のほうが認識結果より明らかにもっともらしいと判定した候補だけを採用します。
+認識結果は文末か、約40文字ごとの文節の切れ目で区切って補正し、前の部分を文脈として使います。
+合成音声で読み上げた96件の短い発話では12件で誤りが減りました（言語モデルで判定する前は3件）。
+10秒から2分の長い発話22件では文字誤りが128から111へ、「です・ます」を使わない常体の文章12件では39から32へ減り、補正で悪くなった発話はありませんでした。
+補正にかかる時間は4スレッドのCPUで、短い発話で約0.1秒、30秒の発話で約1秒、1分の発話で2.4〜3.1秒です。
+長い録音は録音中に途中の無音で区切り、区切った部分から補正するため、録音終了後に待つのは最後の部分の補正だけです（2分半の録音で、録音終了から入力まで補正なしの4.3秒に対して7.1秒）。
 
-モデル（約80MB）は`parakeetd-download-models`（リポジトリでは`scripts/download-models.sh`）が`~/.local/share/parakeetd/models/jinen-v2-small/`へダウンロードします。
-モデルファイルがなければ補正は無効になり、認識結果をそのまま入力します。
+モデル（jinen-v2-smallが約80MB、TinySwallow-1.5Bが約940MB）は`parakeetd-download-models`（リポジトリでは`scripts/download-models.sh`）が`~/.local/share/parakeetd/models/`へダウンロードします。
+補正を有効にすると、デーモンのメモリ使用量が約1.1GB増えます。
+どちらかのモデルファイルがなければ補正は無効になり、認識結果をそのまま入力します。
 補正にはAVX2、FMA、F16C、BMI2に対応したCPU（Intel Haswell、AMD Excavator以降）が必要で、対応していないCPUでは補正を自動で無効にします。
 
 補正を止めるには、`~/.config/parakeetd/config.toml`に次を書きます。
@@ -155,8 +159,9 @@ KDEの場合はシステム設定からキーボードの設定を開き、キ�
 enabled = false
 ```
 
-`margin`は置き換えに必要な対数尤度の差（nat単位、既定値6.0）です。
-大きくすると置き換えが減り、小さくすると増えます。
+`judge_margin`は候補の採用に必要な対数尤度の差（nat単位、既定値2.0）です。
+大きくすると採用が減り、小さくすると増えます。
+以前の`margin`は廃止しました。設定ファイルに残っているとデーモンが起動しないため、削除してください。
 
 ## 設定
 
@@ -215,9 +220,10 @@ fcitx5-parakeet本体はMITライセンスです（`LICENSE`）。
 
 パッケージには音声認識ライブラリとして[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache License 2.0、`LICENSE-APACHE-2.0`）と[ONNX Runtime](https://github.com/microsoft/onnxruntime)（MITライセンス）の共有ライブラリを同梱しています。
 
-インストール時にダウンロードするNVIDIA Parakeetの音声認識モデルは[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)、Silero VADのモデルはMITライセンス、jinen-v2-smallは[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)で配布されています。
+インストール時にダウンロードするNVIDIA Parakeetの音声認識モデルは[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)、Silero VADのモデルはMITライセンス、jinen-v2-smallは[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)、TinySwallow-1.5BはApache License 2.0で配布されています。
+TinySwallow-1.5Bのモデルカードは、このモデルを研究開発用の試作品とし、商用利用やミッションクリティカルな用途を想定しておらず、利用は自己責任で性能を保証しないとしています。
 モデルはパッケージには含まれません。
 
-デーモンにはかな漢字変換の推論に使う[llama.cpp](https://github.com/ggml-org/llama.cpp)（MITライセンス）と、読みを求めるためのIPADIC辞書（`licenses/ipadic.LICENSE`）を組み込んでいます。
+デーモンには補正用モデルの推論に使う[llama.cpp](https://github.com/ggml-org/llama.cpp)（MITライセンス）と、読みを求めるためのIPADIC辞書（`licenses/ipadic.LICENSE`）を組み込んでいます。
 
 同梱物と依存物の一覧は`THIRD_PARTY_NOTICES.md`にあります。

@@ -26,7 +26,7 @@ following third-party components.
 - Copyright (c) 2023-2026 The ggml authors
 - License: MIT License (`licenses/llama.cpp.LICENSE`)
 - Source: https://github.com/ggml-org/llama.cpp
-- Statically linked into `parakeetd` through the `llama-cpp-2` crate; runs the correction model
+- Statically linked into `parakeetd` through the `llama-cpp-2` crate; runs the correction models
 
 ### IPADIC (mecab-ipadic 2.7.0)
 
@@ -76,3 +76,16 @@ They are not part of the package.
 - License: CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/)
 - Source: https://huggingface.co/togatogah/jinen-v2-small.gguf
 - Downloaded as `jinen-v2-small/jinen-v2-small-Q5_K_M.gguf`; corrects Japanese homophones
+
+### TinySwallow-1.5B
+
+- Copyright Sakana AI and the Swallow team; distilled from Qwen2.5-32B-Instruct into
+  Qwen2.5-1.5B-Instruct (both Apache License 2.0)
+- License: Apache License 2.0 (`LICENSE-APACHE-2.0`)
+- Source: https://huggingface.co/SakanaAI/TinySwallow-1.5B, quantized to GGUF by mmnga at
+  https://huggingface.co/mmnga/TinySwallow-1.5B-gguf
+- Downloaded as `tinyswallow-1.5b/TinySwallow-1.5B-Q4_K_M.gguf`; judges the homophone
+  corrections jinen-v2-small proposes
+- The model card states that the model is an experimental prototype for research and
+  development, not intended for commercial use or mission-critical deployment, and that it is
+  provided without any guarantee or liability

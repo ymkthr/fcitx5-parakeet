@@ -11,6 +11,8 @@ use serde::Deserialize;
 
 pub const DEFAULT_SAMPLE_RATE: i32 = 16000;
 pub const AUTO_LANG: &str = "auto";
+/// Calibrated in `correct.rs`.
+const DEFAULT_JUDGE_MARGIN: f32 = 2.0;
 
 fn xdg_dir(env: &str, fallback: &str) -> PathBuf {
     match std::env::var_os(env) {
@@ -73,13 +75,15 @@ pub struct AutoConfig {
     pub threshold: f32,
 }
 
-/// Homophone correction of Japanese transcripts with the jinen-v2 kana-kanji
-/// model; see `correct.rs`.
+/// Homophone correction of Japanese transcripts: the jinen-v2 kana-kanji
+/// model proposes edits and a general language model judges them; see
+/// `correct.rs`.
 #[derive(Debug, Clone)]
 pub struct CorrectionConfig {
     pub model: PathBuf,
-    /// Nats by which the model's own conversion must beat the transcript.
-    pub margin: f32,
+    pub judge_model: PathBuf,
+    /// Nats by which the judge must prefer an edit to the transcript.
+    pub judge_margin: f32,
     pub num_threads: i32,
 }
 
@@ -160,7 +164,8 @@ struct RawAuto {
 struct RawCorrection {
     enabled: Option<bool>,
     model: Option<PathBuf>,
-    margin: Option<f32>,
+    judge_model: Option<PathBuf>,
+    judge_margin: Option<f32>,
     num_threads: Option<i32>,
 }
 
@@ -213,22 +218,32 @@ fn correction(raw: RawCorrection) -> Result<Option<CorrectionConfig>> {
     if !raw.enabled.unwrap_or(true) {
         return Ok(None);
     }
-    let margin = raw.margin.unwrap_or(6.0);
-    if !margin.is_finite() {
-        anyhow::bail!("correction.margin must be a finite number");
+    let judge_margin = raw.judge_margin.unwrap_or(DEFAULT_JUDGE_MARGIN);
+    if !judge_margin.is_finite() {
+        anyhow::bail!("correction.judge_margin must be a finite number");
     }
+    let models = default_models_dir();
     let model = raw.model.map(|p| expand_home(&p)).unwrap_or_else(|| {
-        default_models_dir()
+        models
             .join("jinen-v2-small")
             .join("jinen-v2-small-Q5_K_M.gguf")
     });
-    if !model.is_file() {
-        info!("Japanese correction disabled: {} not found", model.display());
+    let judge_model = raw.judge_model.map(|p| expand_home(&p)).unwrap_or_else(|| {
+        models
+            .join("tinyswallow-1.5b")
+            .join("TinySwallow-1.5B-Q4_K_M.gguf")
+    });
+    if let Some(missing) = [&model, &judge_model].into_iter().find(|p| !p.is_file()) {
+        info!(
+            "Japanese correction disabled: {} not found",
+            missing.display()
+        );
         return Ok(None);
     }
     Ok(Some(CorrectionConfig {
         model,
-        margin,
+        judge_model,
+        judge_margin,
         num_threads: raw.num_threads.unwrap_or(4),
     }))
 }
@@ -281,8 +296,7 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
     // A segment never outgrows max_seconds, so the pause search must start by then.
     let commit_after_seconds =
         seconds("commit_after_seconds", raw.commit_after_seconds, 60.0)?.min(max_seconds);
-    let max_recording_seconds =
-        seconds("max_recording_seconds", raw.max_recording_seconds, 600.0)?;
+    let max_recording_seconds = seconds("max_recording_seconds", raw.max_recording_seconds, 600.0)?;
     let sample_rate = raw.sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE);
     if sample_rate <= 0 {
         anyhow::bail!("sample_rate must be greater than zero");
@@ -346,30 +360,42 @@ mod tests {
         let model = dir.join("model.gguf");
         std::fs::write(&model, b"").unwrap();
         let config = dir.join("config.toml");
-        std::fs::write(&config, toml.replace("{model}", &model.display().to_string())).unwrap();
+        std::fs::write(
+            &config,
+            toml.replace("{model}", &model.display().to_string()),
+        )
+        .unwrap();
         let cfg = load(Some(&config)).unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
         cfg
     }
 
     #[test]
-    fn correction_defaults_when_model_present() {
-        let cfg = load_with_model("correction-defaults", "[correction]\nmodel = \"{model}\"\n");
+    fn correction_defaults_when_models_present() {
+        let cfg = load_with_model(
+            "correction-defaults",
+            "[correction]\nmodel = \"{model}\"\njudge_model = \"{model}\"\n",
+        );
         assert!(cfg.correction.is_some(), "correction enabled");
     }
 
     #[test]
-    fn correction_disabled_explicitly_or_without_model() {
+    fn correction_disabled_explicitly_or_without_either_model() {
         let off = load_with_model(
             "correction-off",
-            "[correction]\nenabled = false\nmodel = \"{model}\"\n",
+            "[correction]\nenabled = false\nmodel = \"{model}\"\njudge_model = \"{model}\"\n",
         );
         assert!(off.correction.is_none());
-        let missing = load_with_model(
-            "correction-missing",
-            "[correction]\nmodel = \"/nonexistent/jinen.gguf\"\n",
+        let no_jinen = load_with_model(
+            "correction-no-jinen",
+            "[correction]\nmodel = \"/nonexistent/jinen.gguf\"\njudge_model = \"{model}\"\n",
         );
-        assert!(missing.correction.is_none());
+        assert!(no_jinen.correction.is_none());
+        let no_judge = load_with_model(
+            "correction-no-judge",
+            "[correction]\nmodel = \"{model}\"\njudge_model = \"/nonexistent/judge.gguf\"\n",
+        );
+        assert!(no_judge.correction.is_none());
     }
 
     #[test]

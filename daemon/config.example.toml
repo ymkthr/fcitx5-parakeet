@@ -58,10 +58,12 @@ threshold = -0.15
 
 # Japanese homophone correction: the jinen-v2-small kana-kanji model re-converts
 # the transcript's reading, using the text before the cursor as context, and
-# replaces the transcript only when its conversion is more likely by `margin`
-# nats. Disabled automatically when the model file is missing.
+# the TinySwallow-1.5B language model accepts each change it proposes only when
+# the changed text is more likely by `judge_margin` nats. Disabled
+# automatically when either model file is missing.
 [correction]
 # enabled = true
 # model = "~/.local/share/parakeetd/models/jinen-v2-small/jinen-v2-small-Q5_K_M.gguf"
-# margin = 6.0
+# judge_model = "~/.local/share/parakeetd/models/tinyswallow-1.5b/TinySwallow-1.5B-Q4_K_M.gguf"
+# judge_margin = 2.0
 # num_threads = 4
