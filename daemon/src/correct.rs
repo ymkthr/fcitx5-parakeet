@@ -4,8 +4,10 @@
 //! (機会/機械). The transcript's reading is re-converted by the jinen-v2-small
 //! kana-kanji model with the text before the cursor as context, and the
 //! conversion replaces the transcript only when the model scores it clearly
-//! higher than the transcript itself. On 96 recorded utterances this fixed 6
-//! and broke none at the default margin.
+//! higher than the transcript itself. At the default margin this fixed 3 of
+//! 96 synthesized utterances and changed no correct word in 22 long
+//! dictations; at 4 nats it fixed 6 short ones but rewrote correct words in
+//! long ones (替えて -> 変えて, 来週 -> 来秋).
 
 use std::borrow::Cow;
 use std::num::NonZeroU32;
@@ -35,6 +37,9 @@ const MAX_OUTPUT_TOKENS: usize = 60;
 const BATCH_TOKENS: usize = 128;
 /// IPADIC feature column holding the katakana reading of the surface form.
 const READING_FIELD: usize = 7;
+/// Longest sentence handed to the model; longer ones (no sentence end found)
+/// are left as transcribed. The tuning set's longest sentence is about 35.
+const MAX_SENTENCE_CHARS: usize = 60;
 
 const CONTEXT_MARK: char = '\u{EE02}';
 const INPUT_MARK: char = '\u{EE00}';
@@ -100,14 +105,32 @@ impl Corrector {
 
     /// Blocking. Never fails: any error keeps the transcript as it is.
     pub fn correct(&self, asr: &str, context: &str) -> String {
-        match self.with_loaded(|loaded| self.convert(loaded, asr, context)) {
-            Ok(Some(better)) => better,
-            Ok(None) => asr.to_string(),
+        match self.with_loaded(|loaded| self.correct_sentences(loaded, asr, context)) {
+            Ok(text) => text,
             Err(e) => {
                 warn!("correction skipped: {e:#}");
                 asr.to_string()
             }
         }
+    }
+
+    /// The model and the margin were tuned on single sentences: given a whole
+    /// paragraph the model returns a short, unrelated string that still
+    /// out-scores the transcript, and one strong fix in a long text would
+    /// carry the conversion's mistakes elsewhere in it. Each sentence is
+    /// therefore judged on its own, with the corrected text before it as
+    /// context.
+    fn correct_sentences(&self, loaded: &Loaded, asr: &str, context: &str) -> Result<String> {
+        let mut out = String::with_capacity(asr.len());
+        for sentence in sentences(&loaded.segmenter, asr)? {
+            let fixed = if norm(sentence).chars().count() > MAX_SENTENCE_CHARS {
+                None
+            } else {
+                self.convert(loaded, sentence, &format!("{context}{out}"))?
+            };
+            out.push_str(fixed.as_deref().unwrap_or(sentence));
+        }
+        Ok(out)
     }
 
     fn with_loaded<T>(&self, f: impl FnOnce(&Loaded) -> Result<T>) -> Result<T> {
@@ -186,6 +209,11 @@ impl Corrector {
         if norm(out) == norm(asr) {
             return Ok(None);
         }
+        // A word the analyzer does not know gets a made-up reading (補証 ->
+        // ホアカシ), and the model then spells that reading out in kana.
+        if kana_count(out) > kana_count(asr) {
+            return Ok(None);
+        }
 
         let out_tokens = continuation(model, out);
         if prompt_tokens.len() + out_tokens.len() > n_ctx as usize {
@@ -210,6 +238,10 @@ impl Corrector {
     }
 }
 
+fn kana_count(s: &str) -> usize {
+    s.chars().filter(|c| matches!(c, 'ぁ'..='ゖ' | 'ァ'..='ヺ')).count()
+}
+
 /// Katakana reading of `text`; symbols and unknown words keep their surface.
 fn reading(segmenter: &Segmenter, text: &str) -> Result<String> {
     let text: String = text.nfkc().collect();
@@ -224,6 +256,54 @@ fn reading(segmenter: &Segmenter, text: &str) -> Result<String> {
         }
     }
     Ok(kana)
+}
+
+/// Splits after sentence-final punctuation, and after a polite sentence end
+/// (ます, ました, でしょう, ですね) that the next word does not continue,
+/// because the transcript often has no punctuation at all. Plain-form endings
+/// are not used: IPADIC gives た and ない the same form in 買った本 as at
+/// the end of a sentence.
+fn sentences<'a>(segmenter: &Segmenter, text: &'a str) -> Result<Vec<&'a str>> {
+    struct Word {
+        end: usize,
+        stop: bool,
+        final_word: bool,
+        continues: bool,
+    }
+    let mut words: Vec<Word> = Vec::new();
+    let (mut prev_polite, mut prev_final) = (false, false);
+    for mut t in segmenter
+        .segment(Cow::Borrowed(text))
+        .map_err(|e| anyhow!("morphological analysis: {e}"))?
+    {
+        let pos = t.get_detail(0).unwrap_or_default().to_string();
+        let sub = t.get_detail(1).unwrap_or_default().to_string();
+        let form = t.get_detail(5).unwrap_or_default().to_string();
+        let polite = matches!(t.get_detail(6), Some("ます" | "です"));
+        let final_word = (polite && form == "基本形")
+            || (prev_polite && pos == "助動詞" && matches!(t.surface.as_ref(), "た" | "う"))
+            || (prev_final && sub == "終助詞");
+        words.push(Word {
+            end: t.byte_end,
+            stop: ["。", "！", "？", "!", "?"].contains(&t.surface.as_ref()),
+            final_word,
+            continues: matches!(pos.as_str(), "助詞" | "助動詞" | "記号"),
+        });
+        (prev_polite, prev_final) = (polite, final_word);
+    }
+    let mut out = Vec::new();
+    let mut start = 0;
+    for (i, w) in words.iter().enumerate() {
+        let next_starts_sentence = words.get(i + 1).is_some_and(|n| !n.continues);
+        if w.stop || (w.final_word && next_starts_sentence) {
+            out.push(&text[start..w.end]);
+            start = w.end;
+        }
+    }
+    if start < text.len() {
+        out.push(&text[start..]);
+    }
+    Ok(out)
 }
 
 fn hiragana_to_katakana(c: char) -> char {
@@ -323,5 +403,33 @@ mod tests {
                 "い".repeat(CONTEXT_CHARS)
             )
         );
+    }
+
+    #[test]
+    fn sentences_split_at_sentence_ends_without_punctuation() {
+        let dictionary = load_dictionary("embedded://ipadic").unwrap();
+        let segmenter = Segmenter::new(Mode::Normal, dictionary, None);
+        let text = "新しい機械を導入しましょう意外なことに彼以外は全員参加しました。試験もあるので早めに始めます";
+        assert_eq!(
+            sentences(&segmenter, text).unwrap(),
+            [
+                "新しい機械を導入しましょう",
+                "意外なことに彼以外は全員参加しました。",
+                "試験もあるので早めに始めます",
+            ]
+        );
+    }
+
+    #[test]
+    fn sentences_do_not_split_inside_a_sentence() {
+        let dictionary = load_dictionary("embedded://ipadic").unwrap();
+        let segmenter = Segmenter::new(Mode::Normal, dictionary, None);
+        for text in [
+            "きかいを見てください",
+            "関数の引き数を1つ減らして戻り値の型を変更します。",
+            "昨日買った本を読みました",
+        ] {
+            assert_eq!(sentences(&segmenter, text).unwrap(), [text]);
+        }
     }
 }

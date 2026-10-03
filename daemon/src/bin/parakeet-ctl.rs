@@ -1,6 +1,6 @@
 //! Diagnostic client for the parakeetd line protocol.
 
-use parakeetd::config;
+use parakeetd::{asr, config};
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -10,11 +10,21 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 
+enum Msg {
+    Line(String),
+    Enter,
+}
+
 struct Client {
     stream: UnixStream,
-    /// Reply lines; a reader thread prints PARTIAL events to stderr as they arrive.
-    replies: mpsc::Receiver<String>,
+    /// Daemon lines except PARTIAL; a reader thread prints events to stderr
+    /// as they arrive.
+    rx: mpsc::Receiver<Msg>,
+    tx: mpsc::Sender<Msg>,
     next_id: u64,
+    /// Texts of the COMMIT events seen so far.
+    committed: Vec<String>,
+    ended: bool,
 }
 
 impl Client {
@@ -22,25 +32,61 @@ impl Client {
         let stream = UnixStream::connect(path)
             .with_context(|| format!("connecting to {}", path.display()))?;
         let reader = BufReader::new(stream.try_clone()?);
-        let (tx, replies) = mpsc::channel();
+        let (tx, rx) = mpsc::channel();
+        let lines = tx.clone();
         let connected = Instant::now();
         std::thread::spawn(move || {
             for line in reader.lines() {
                 let Ok(line) = line else { break };
                 let rest = line.split_once(' ').map_or("", |(_, rest)| rest);
                 let (status, text) = rest.split_once(' ').unwrap_or((rest, ""));
-                if status == "PARTIAL" {
-                    eprintln!("[{:6.2}s] {text}", connected.elapsed().as_secs_f32());
-                } else if tx.send(line).is_err() {
+                if matches!(status, "PARTIAL" | "COMMIT" | "ENDED") {
+                    let event = if status == "PARTIAL" { "" } else { status };
+                    eprintln!("[{:6.2}s] {event} {text}", connected.elapsed().as_secs_f32());
+                }
+                if status != "PARTIAL" && lines.send(Msg::Line(line)).is_err() {
                     break;
                 }
             }
         });
         Ok(Self {
             stream,
-            replies,
+            rx,
+            tx,
             next_id: 1,
+            committed: Vec::new(),
+            ended: false,
         })
+    }
+
+    /// Records COMMIT and ENDED events; returns `(id, ok, payload)` for a reply.
+    fn note(&mut self, line: &str) -> Option<(u64, bool, String)> {
+        let (id, rest) = line.split_once(' ')?;
+        let (status, payload) = rest.split_once(' ').unwrap_or((rest, ""));
+        match status {
+            "OK" | "ERR" => Some((id.parse().ok()?, status == "OK", payload.to_string())),
+            "COMMIT" => {
+                let text = payload.split_once(' ').map_or("", |(_, text)| text);
+                self.committed.push(text.to_string());
+                None
+            }
+            "ENDED" => {
+                self.ended = true;
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn recv(&self, deadline: Option<Instant>) -> Result<Option<Msg>> {
+        let Some(deadline) = deadline else {
+            return Ok(Some(self.rx.recv().context("daemon closed the connection")?));
+        };
+        match self.rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(msg) => Ok(Some(msg)),
+            Err(mpsc::RecvTimeoutError::Timeout) => Ok(None),
+            Err(mpsc::RecvTimeoutError::Disconnected) => bail!("daemon closed the connection"),
+        }
     }
 
     fn request(&mut self, command: &str, arg: &str) -> Result<(bool, String)> {
@@ -55,18 +101,37 @@ impl Client {
         self.stream.flush()?;
 
         loop {
-            let Ok(line) = self.replies.recv() else {
-                bail!("daemon closed the connection");
-            };
-            let Some((reply_id, rest)) = line.split_once(' ') else {
-                continue;
-            };
-            if reply_id.parse::<u64>() != Ok(id) {
-                continue;
+            if let Some(Msg::Line(line)) = self.recv(None)? {
+                if let Some((reply_id, ok, payload)) = self.note(&line) {
+                    if reply_id == id {
+                        return Ok((ok, payload));
+                    }
+                }
             }
-            let (status, payload) = rest.split_once(' ').unwrap_or((rest, ""));
-            return Ok((status == "OK", payload.to_string()));
         }
+    }
+
+    /// Lets the capture run for `seconds`, or until Enter; returns early when
+    /// the daemon ends it.
+    fn record(&mut self, seconds: Option<f32>) -> Result<()> {
+        let deadline = seconds.map(|s| Instant::now() + Duration::from_secs_f32(s));
+        if deadline.is_none() {
+            let enter = self.tx.clone();
+            std::thread::spawn(move || {
+                let mut input = String::new();
+                let _ = std::io::stdin().read_line(&mut input);
+                let _ = enter.send(Msg::Enter);
+            });
+        }
+        while !self.ended {
+            match self.recv(deadline)? {
+                Some(Msg::Line(line)) => {
+                    self.note(&line);
+                }
+                Some(Msg::Enter) | None => break,
+            }
+        }
+        Ok(())
     }
 }
 
@@ -131,19 +196,26 @@ fn main() -> Result<()> {
             } else {
                 if let Some(seconds) = seconds {
                     eprintln!("recording {seconds:.1}s...");
-                    std::thread::sleep(Duration::from_secs_f32(seconds));
                 } else {
                     eprint!("recording... press Enter to stop ");
                     std::io::stderr().flush()?;
-                    let mut input = String::new();
-                    std::io::stdin().read_line(&mut input)?;
                 }
-                let (ok, result) = client.request("STOP", "")?;
-                let text = result
-                    .split_once(' ')
-                    .map_or("", |(_, text)| text)
-                    .to_string();
-                (ok, text)
+                client.record(seconds)?;
+                let (ok, rest) = if client.ended {
+                    (true, String::new())
+                } else {
+                    let (ok, result) = client.request("STOP", "")?;
+                    let text = result.split_once(' ').map_or("", |(_, text)| text);
+                    (ok, if ok { text.to_string() } else { result })
+                };
+                if ok {
+                    let text = client.committed.iter().chain([&rest]).fold(String::new(), |all, part| {
+                        asr::join(&all, part)
+                    });
+                    (ok, text)
+                } else {
+                    (ok, rest)
+                }
             }
         }
         "-h" | "--help" => {

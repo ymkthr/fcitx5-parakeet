@@ -3,11 +3,22 @@
 # Unix socket. Leave unset when started through systemd (parakeetd.socket owns it).
 # socket_path = "/run/user/1000/parakeetd.sock"
 
-# PipeWire source node name. Unset = the session's default source.
+# PipeWire source node name. Unset = the session's default source. While the
+# node is absent (unplugged), WirePlumber records from the default source; the
+# capture returns to this node when it reappears.
 # target = "alsa_input.usb-R__DE_Microphones_R__DE_NT-USB_Mini_58311147-00.mono-fallback"
 
-# Hard stop for a single capture, in seconds.
+# A long dictation is entered in parts while you keep speaking: once this many
+# seconds are not yet entered, the part up to the longest pause in their second
+# half is transcribed (with correction) and entered, and recording continues.
+# commit_after_seconds = 60
+
+# Longest part without a pause, in seconds. Speech that never pauses is cut at
+# its quietest moment within the last 10 s.
 # max_seconds = 120
+
+# A capture ends by itself after this many seconds in total, as if stopped.
+# max_recording_seconds = 600
 
 # Models to load at start-up. Loading takes about 2 s per model.
 # preload = ["ja", "en"]
@@ -19,9 +30,9 @@
 # fillers such as "うん" from room noise. An empty string disables it.
 # vad_model = "~/.local/share/parakeetd/models/silero_vad.onnx"
 
-# While recording, re-transcribe the audio so far this often (milliseconds) and
-# show it as a preview near the cursor. The committed text still comes from
-# the whole capture. 0 disables the preview.
+# While recording, re-transcribe the audio not yet entered this often
+# (milliseconds) and show it as a preview near the cursor. The entered text
+# still comes from transcribing each part as a whole. 0 disables the preview.
 # partial_interval_ms = 500
 
 [models.ja]
@@ -36,10 +47,14 @@ num_threads = 4
 
 # "auto" decodes with both models. English wins when its mean token log
 # probability reaches the threshold; otherwise the Japanese result is used.
+# English sentences score above -0.1 and Japanese speech below -0.2. A lone
+# English word ("OK", "No", "Bye") can score down to -0.4 and then comes out in
+# katakana; a threshold nearer -0.35 keeps such words English but turns some
+# short Japanese phrases into romaji.
 [auto]
 detector = "en"
 fallback = "ja"
-threshold = -0.35
+threshold = -0.15
 
 # Japanese homophone correction: the jinen-v2-small kana-kanji model re-converts
 # the transcript's reading, using the text before the cursor as context, and
@@ -48,5 +63,5 @@ threshold = -0.35
 [correction]
 # enabled = true
 # model = "~/.local/share/parakeetd/models/jinen-v2-small/jinen-v2-small-Q5_K_M.gguf"
-# margin = 4.0
+# margin = 6.0
 # num_threads = 4

@@ -21,11 +21,11 @@ namespace fcitx {
 
 class ParakeetClient {
 public:
-    /// Called exactly once per request: ok=false carries the ERR message or a
+    /// Called once per request: ok=false carries the ERR message or a
     /// transport failure description.
     using Reply = std::function<void(bool ok, std::string payload)>;
-    /// Receives the payload of each `<id> PARTIAL <payload>` event line.
-    using Event = std::function<void(std::string payload)>;
+    /// Receives each `<id> <EVENT> [payload]` line (PARTIAL, COMMIT, ENDED).
+    using Event = std::function<void(const std::string &event, std::string payload)>;
 
     ParakeetClient(EventLoop &loop, std::string socketPath);
     ~ParakeetClient();
@@ -35,12 +35,13 @@ public:
     bool connected() const { return fd_.isValid(); }
 
     /// Sends "<id> COMMAND [arg]" and returns the id, or 0 (without invoking
-    /// reply) when the daemon socket cannot be reached. The reply fails with
-    /// "timeout" if nothing arrives within timeoutUsec. onEvent, if set,
-    /// receives this id's events, which outlive the reply, until
-    /// unsubscribe(id) or disconnect().
+    /// reply) when the daemon socket cannot be reached. If nothing arrives
+    /// within timeoutUsec the reply fails with "timeout", unless onTimeout is
+    /// set: then onTimeout runs and the reply still comes whenever the daemon
+    /// sends it. onEvent, if set, receives this id's events, which outlive the
+    /// reply, until unsubscribe(id) or disconnect().
     uint64_t request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec,
-                     Event onEvent = {});
+                     Event onEvent = {}, std::function<void()> onTimeout = {});
 
     void unsubscribe(uint64_t id) { events_.erase(id); }
 
@@ -51,6 +52,7 @@ private:
     struct Pending {
         Reply reply;
         std::unique_ptr<EventSourceTime> timer;
+        std::function<void()> onTimeout;
     };
 
     bool ensureConnected();

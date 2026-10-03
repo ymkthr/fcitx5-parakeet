@@ -29,8 +29,10 @@ constexpr uint64_t kUsec = 1000 * 1000;
 constexpr uint64_t kFailStatusUsec = 2500 * 1000;
 // parakeetd answers START once samples flow (RECORDER_START_TIMEOUT = 3 s).
 constexpr uint64_t kStartTimeoutUsec = 10 * kUsec;
-// Transcription of a 120 s capture stays well under this on CPU.
-constexpr uint64_t kStopTimeoutUsec = 60 * kUsec;
+// With commit_after_seconds the final decode covers at most about a minute of
+// audio; the margin is for a CPU saturated by other work. A later reply still
+// commits.
+constexpr uint64_t kStopTimeoutUsec = 300 * kUsec;
 constexpr uint64_t kCancelTimeoutUsec = 5 * kUsec;
 // Context length the jinen-v2 model card uses; parakeetd truncates to the same.
 constexpr size_t kContextChars = 64;
@@ -56,8 +58,8 @@ bool needsLeadingSpace(InputContext *ic) {
     return before != ' ' && before != '\n' && before != '\t';
 }
 
-/// Text before the cursor, sent with STOP so parakeetd can pick homophones
-/// that fit what is already written. Kept on one protocol line.
+/// Text before the cursor, sent with START and STOP so parakeetd can pick
+/// homophones that fit what is already written. Kept on one protocol line.
 std::string contextBeforeCursor(InputContext *ic) {
     if (!ic->capabilityFlags().test(CapabilityFlag::SurroundingText)) {
         return {};
@@ -117,16 +119,32 @@ ParakeetModule::ParakeetModule(Instance *instance)
                               [this](Event &event) { onKeyEvent(static_cast<KeyEvent &>(event)); }));
     watchers_.emplace_back(instance_->watchEvent(
         EventType::InputContextFocusOut, EventWatcherPhase::Default, [this](Event &event) {
-            // A capture nobody can finish is dropped. Pending transcripts
-            // still commit when they arrive.
+            // A focus change (a notification, a window switch) must not lose
+            // speech: the capture is finished, and its text waits for this
+            // input context to get focus back.
             auto *ic = static_cast<InputContextEvent &>(event).inputContext();
             auto *state = ic->propertyFor(&factory_);
             if (state->recording) {
-                cancelRecording(ic, state);
+                stopRecording(ic, state);
             }
             state->armed = false;
             state->locked = false;
             state->swallowRelease = false;
+        }));
+    watchers_.emplace_back(instance_->watchEvent(
+        EventType::InputContextFocusIn, EventWatcherPhase::Default, [this](Event &event) {
+            auto *ic = static_cast<InputContextEvent &>(event).inputContext();
+            auto *state = ic->propertyFor(&factory_);
+            if (!state->held.empty()) {
+                deliver(ic, state, std::exchange(state->held, {}));
+            }
+        }));
+    watchers_.emplace_back(instance_->watchEvent(
+        EventType::InputContextDestroyed, EventWatcherPhase::Default, [this](Event &event) {
+            auto *ic = static_cast<InputContextEvent &>(event).inputContext();
+            if (const auto &held = ic->propertyFor(&factory_)->held; !held.empty()) {
+                PK_DEBUG() << "input context destroyed; dropping " << held.size() << " held bytes";
+            }
         }));
 }
 
@@ -199,6 +217,7 @@ void ParakeetModule::onKeyEvent(KeyEvent &event) {
         if (composing(ic)) {
             PK_DEBUG() << "trigger ignored: input method is composing";
             state->swallowRelease = true;
+            failStatus(ic, _("Commit the text being composed before dictating"));
             return event.filterAndAccept();
         }
         state->armed = true;
@@ -223,8 +242,13 @@ void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
     updateStatus(ic, state);
 
     auto ref = ic->watch();
+    std::string arg = *config_.language;
+    if (std::string context = contextBeforeCursor(ic); !context.empty()) {
+        arg += ' ';
+        arg += context;
+    }
     state->startRequest = client_->request(
-        "START", *config_.language,
+        "START", arg,
         [this, ref, session](bool ok, std::string payload) {
             auto *ic = ref.get();
             if (!ic) {
@@ -246,17 +270,36 @@ void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
             failStatus(ic, payload);
         },
         kStartTimeoutUsec,
-        [this, ref, session](std::string text) {
+        [this, ref, session](const std::string &event, std::string payload) {
             auto *ic = ref.get();
             if (!ic) {
+                if (event == "COMMIT") {
+                    PK_DEBUG() << "input context destroyed; dropping " << payload.size() << " bytes";
+                }
                 return;
             }
             auto *state = ic->propertyFor(&factory_);
-            if (state->session != session || !state->recording) {
-                return;
+            const bool current = state->session == session;
+            if (event == "COMMIT") {
+                // Commits of a stopped capture still land after a new one starts.
+                if (current) {
+                    state->partial.clear();
+                }
+                deliver(ic, state, payload);
+                updateStatus(ic, state);
+            } else if (event == "PARTIAL" && current && state->recording) {
+                state->partial = std::move(payload);
+                updateStatus(ic, state);
+            } else if (event == "ENDED" && current) {
+                state->endedSession = session;
+                client_->unsubscribe(state->startRequest);
+                if (state->recording) {
+                    state->recording = false;
+                    state->locked = false;
+                    state->partial.clear();
+                    updateStatus(ic, state);
+                }
             }
-            state->partial = std::move(text);
-            updateStatus(ic, state);
         });
     if (state->startRequest == 0) {
         state->recording = false;
@@ -266,16 +309,20 @@ void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
 
 void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
     state->recording = false;
-    client_->unsubscribe(state->startRequest);
     ++state->pendingResults;
     updateStatus(ic, state);
 
     auto ref = ic->watch();
+    // COMMIT events of this capture may arrive until the STOP reply.
+    const uint64_t start = state->startRequest;
+    const uint64_t session = state->session;
     const uint64_t sent = client_->request(
         "STOP", contextBeforeCursor(ic),
-        [this, ref](bool ok, std::string payload) {
+        [this, ref, start, session](bool ok, std::string payload) {
+            client_->unsubscribe(start);
             auto *ic = ref.get();
             if (!ic) {
+                PK_DEBUG() << "input context destroyed; dropping " << payload.size() << " bytes";
                 return;
             }
             auto *state = ic->propertyFor(&factory_);
@@ -284,24 +331,16 @@ void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
                 state->partial.clear();
             }
             if (!ok) {
-                failStatus(ic, payload);
+                // A capture the daemon ENDED itself already delivered its text.
+                if (state->endedSession != session) {
+                    failStatus(ic, payload);
+                }
                 return;
             }
-            // payload: "<lang> <text>", text may be empty.
-            const size_t space = payload.find(' ');
-            const std::string_view lang = std::string_view(payload).substr(0, space);
-            std::string text = space == std::string::npos ? std::string() : payload.substr(space + 1);
             updateStatus(ic, state);
-            if (text.empty()) {
-                return;
-            }
-            if (lang == "en" && needsLeadingSpace(ic)) {
-                text.insert(text.begin(), ' ');
-            }
-            PK_DEBUG() << "commit " << text.size() << " bytes";
-            ic->commitString(text);
+            deliver(ic, state, payload);
         },
-        kStopTimeoutUsec);
+        kStopTimeoutUsec, {}, [] { PK_WARN() << "parakeetd has not answered STOP yet; still waiting"; });
     if (sent == 0) {
         state->pendingResults = std::max(0, state->pendingResults - 1);
         failStatus(ic, _("parakeetd is not running"));
@@ -322,6 +361,31 @@ void ParakeetModule::cancelRecording(InputContext *ic, ParakeetState *state) {
             }
         },
         kCancelTimeoutUsec);
+}
+
+/// Commits a "<lang> <text>" transcript, or holds it on an unfocused input
+/// context, where the frontend may drop or misdirect a commit.
+void ParakeetModule::deliver(InputContext *ic, ParakeetState *state, const std::string &payload) {
+    const size_t space = payload.find(' ');
+    if (space == std::string::npos || space + 1 == payload.size()) {
+        return;
+    }
+    const std::string_view lang = std::string_view(payload).substr(0, space);
+    std::string text = payload.substr(space + 1);
+    if (!ic->hasFocus()) {
+        PK_DEBUG() << "holding " << text.size() << " bytes until the input context has focus";
+        if (state->held.empty()) {
+            state->held = payload;
+        } else {
+            state->held += lang == "en" ? " " + text : text;
+        }
+        return;
+    }
+    if (lang == "en" && needsLeadingSpace(ic)) {
+        text.insert(text.begin(), ' ');
+    }
+    PK_DEBUG() << "commit " << text.size() << " bytes";
+    ic->commitString(text);
 }
 
 void ParakeetModule::showAux(InputContext *ic, const std::string &text) {

@@ -71,6 +71,11 @@ struct ParakeetState : public InputContextProperty {
     uint64_t startRequest = 0;
     // Latest live transcript of the current capture, shown until its result lands.
     std::string partial;
+    // "<lang> <text>" that arrived while this input context was unfocused;
+    // committed on its next focus-in.
+    std::string held;
+    // The session whose capture the daemon ended by itself (ENDED).
+    uint64_t endedSession = 0;
     std::chrono::steady_clock::time_point pressedAt;
 };
 
@@ -90,6 +95,8 @@ class ParakeetModule final : public AddonInstance {
     void startRecording(InputContext *ic, ParakeetState *state);
     void stopRecording(InputContext *ic, ParakeetState *state);
     void cancelRecording(InputContext *ic, ParakeetState *state);
+
+    void deliver(InputContext *ic, ParakeetState *state, const std::string &payload);
 
     void updateStatus(InputContext *ic, const ParakeetState *state);
     void failStatus(InputContext *ic, const std::string &message);

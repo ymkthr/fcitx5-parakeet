@@ -6,7 +6,9 @@
  *   1. unrelated keys are not swallowed,
  *   2. holding the trigger dictates: the live transcript shows in the aux
  *      line while held, and the transcript is committed on release,
- *   3. a tap locks the recording until the next press.
+ *   3. a tap locks the recording until the next press,
+ *   4. focus leaving mid-dictation keeps the transcript, committed once the
+ *      input context has focus again.
  *
  * Environment:
  *   PARAKEET_TEST_SOCKET  parakeetd socket (unset -> test skipped, exit 77)
@@ -75,6 +77,7 @@ int main() {
     // across capture offsets, but a played wav must always produce a commit.
     const std::string expect = envOr("PARAKEET_TEST_EXPECT", "");
     const bool expectCommit = !wav.empty() && !sink.empty();
+    const auto dictateUsec = static_cast<uint64_t>(std::stod(envOr("PARAKEET_TEST_HOLD_SEC", "8")) * kUsec);
 
     setupTestingEnvironment(TESTING_BINARY_DIR, {"src"}, {"test"});
     char arg0[] = "testparakeet";
@@ -112,6 +115,27 @@ int main() {
     auto release = [&](const Key &key) { testfrontend->call<ITestFrontend::keyEvent>(uuid, key, true); };
     auto aux = [&]() { return ic->inputPanel().auxUp().toString(); };
 
+    // 4. Focus leaves mid-dictation (a notification, a window switch): the
+    //    recording ends without losing the speech, and the transcript waits
+    //    until the input context has focus again.
+    auto focusPhase = [&]() {
+        const int before = commits;
+        press(kTrigger);
+        if (expectCommit) {
+            waitpid(player, nullptr, 0);
+            after(kUsec / 2, [&]() { player = play(sink, wav); });
+        }
+        after(expectCommit ? dictateUsec : kUsec, [&, before]() {
+            ic->focusOut();
+            after(15 * kUsec, [&, before]() {
+                FCITX_ASSERT(commits == before) << "committed to an unfocused input context";
+                ic->focusIn();
+                FCITX_ASSERT(commits == before + (expectCommit ? 1 : 0)) << "transcript lost on focus change";
+                instance.exit();
+            });
+        });
+    };
+
     // 3. Tap: press and release at once, the recording keeps running (locked)
     //    and other keys still reach the application; the next press ends it.
     //    Silence is played, so nothing may be committed.
@@ -129,7 +153,7 @@ int main() {
             after(3 * kUsec, [&, before]() {
                 FCITX_ASSERT(commits == before) << "silence must not commit anything";
                 FCITX_ASSERT(aux().empty()) << aux();
-                instance.exit();
+                focusPhase();
             });
         });
     };
@@ -154,7 +178,7 @@ int main() {
             // Let the capture stream become live before playback starts, as a
             // person naturally pauses between pressing the key and speaking.
             after(kUsec / 2, [&]() { player = play(sink, wav); });
-            holdUsec = static_cast<uint64_t>(std::stod(envOr("PARAKEET_TEST_HOLD_SEC", "8")) * kUsec);
+            holdUsec = dictateUsec;
         }
         after(holdUsec, [&]() {
             const std::string live = aux();

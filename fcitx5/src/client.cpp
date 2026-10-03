@@ -114,7 +114,7 @@ bool ParakeetClient::writeAll(std::string_view data) {
 }
 
 uint64_t ParakeetClient::request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec,
-                                 Event onEvent) {
+                                 Event onEvent, std::function<void()> onTimeout) {
     if (!ensureConnected()) {
         return 0;
     }
@@ -134,10 +134,17 @@ uint64_t ParakeetClient::request(std::string_view command, std::string_view arg,
     auto timer = loop_.addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + timeoutUsec, 0,
                                     [this, id](EventSourceTime *source, uint64_t) {
                                         source->setEnabled(false);
+                                        auto it = pending_.find(id);
+                                        if (it != pending_.end() && it->second.onTimeout) {
+                                            // Copied: the handler may issue requests.
+                                            auto onTimeout = it->second.onTimeout;
+                                            onTimeout();
+                                            return true;
+                                        }
                                         settle(id, false, "timeout");
                                         return true;
                                     });
-    pending_.emplace(id, Pending{std::move(reply), std::move(timer)});
+    pending_.emplace(id, Pending{std::move(reply), std::move(timer), std::move(onTimeout)});
     if (onEvent) {
         events_.emplace(id, std::move(onEvent));
     }
@@ -204,16 +211,16 @@ void ParakeetClient::handleLine(std::string_view line) {
     const std::string_view status = rest.substr(0, statusEnd);
     const std::string_view payload = statusEnd == std::string_view::npos ? std::string_view{} : rest.substr(statusEnd + 1);
 
-    if (status == "PARTIAL") {
-        auto it = events_.find(id);
-        if (it != events_.end()) {
-            // Copied: the handler may unsubscribe or disconnect.
-            Event handler = it->second;
-            handler(std::string(payload));
-        }
+    if (status == "OK" || status == "ERR") {
+        settle(id, status == "OK", std::string(payload));
         return;
     }
-    settle(id, status == "OK", std::string(payload));
+    auto it = events_.find(id);
+    if (it != events_.end()) {
+        // Copied: the handler may unsubscribe or disconnect, which frees the line.
+        Event handler = it->second;
+        handler(std::string(status), std::string(payload));
+    }
 }
 
 } // namespace fcitx

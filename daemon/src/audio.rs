@@ -1,9 +1,12 @@
 //! Microphone capture through a persistent PipeWire stream.
 //!
-//! The stream is connected once at start-up and left inactive, so no audio
-//! flows until a capture starts. Activating an already-negotiated stream keeps
-//! start latency to a few milliseconds.
+//! The stream is connected at start-up (and again when a configured target
+//! reappears) and left inactive, so no audio flows until a capture starts.
+//! Activating an already-negotiated stream keeps start latency to a few
+//! milliseconds.
 
+use std::cell::Cell;
+use std::rc::Rc;
 use std::sync::mpsc as std_mpsc;
 use std::sync::Arc;
 use std::thread;
@@ -72,6 +75,17 @@ impl Recording {
     /// Copy of the samples captured so far, from `from` on; capture continues.
     pub fn snapshot(&self, from: usize) -> Vec<i16> {
         self.sink.pcm.lock().get(from..).map_or_else(Vec::new, <[i16]>::to_vec)
+    }
+
+    pub fn len(&self) -> usize {
+        self.sink.pcm.lock().len()
+    }
+
+    /// Forgets the first `n` samples; capture continues behind them.
+    pub fn drain(&self, n: usize) {
+        let mut pcm = self.sink.pcm.lock();
+        let n = n.min(pcm.len());
+        pcm.drain(..n);
     }
 
     pub fn take_pcm(&self) -> Vec<i16> {
@@ -261,32 +275,57 @@ fn run_loop(
     .map_err(|e| anyhow!("serialising format pod: {e:?}"))?
     .0
     .into_inner();
-    let mut params =
-        [spa::pod::Pod::from_bytes(&values).ok_or_else(|| anyhow!("invalid format pod"))?];
-
-    stream
-        .connect(
-            spa::utils::Direction::Input,
-            None,
-            pw::stream::StreamFlags::AUTOCONNECT
-                | pw::stream::StreamFlags::MAP_BUFFERS
-                | pw::stream::StreamFlags::RT_PROCESS
-                | pw::stream::StreamFlags::INACTIVE,
-            &mut params,
-        )
-        .context("connecting capture stream")?;
+    let flags = pw::stream::StreamFlags::AUTOCONNECT
+        | pw::stream::StreamFlags::MAP_BUFFERS
+        | pw::stream::StreamFlags::RT_PROCESS
+        | pw::stream::StreamFlags::INACTIVE;
+    let connect = {
+        let stream = stream.clone();
+        move || -> Result<()> {
+            let mut params =
+                [spa::pod::Pod::from_bytes(&values)
+                    .ok_or_else(|| anyhow!("invalid format pod"))?];
+            stream
+                .connect(spa::utils::Direction::Input, None, flags, &mut params)
+                .context("connecting capture stream")
+        }
+    };
+    connect()?;
     info!(
         "PipeWire capture stream connected ({} Hz mono, target {})",
         cfg.sample_rate,
         cfg.target.as_deref().unwrap_or("default source")
     );
 
+    let watch = Rc::new(TargetWatch::default());
+    let relink: Rc<dyn Fn()> = Rc::new({
+        let stream = stream.clone();
+        move || {
+            if let Err(e) = stream
+                .disconnect()
+                .map_err(anyhow::Error::from)
+                .and_then(|()| connect())
+            {
+                warn!("reconnecting the capture stream failed: {e:#}");
+            }
+        }
+    });
+    let _target_listeners = cfg
+        .target
+        .clone()
+        .map(|target| follow_target(&core, target, Rc::clone(&watch), Rc::clone(&relink)))
+        .transpose()?;
+
     let loop_stream = stream.clone();
     let loop_main = mainloop.clone();
     let _receiver = cmd_rx.attach(mainloop.loop_(), move |cmd| match cmd {
         Cmd::SetActive(active) => {
+            watch.active.set(active);
             if let Err(e) = loop_stream.set_active(active) {
                 warn!("pw_stream_set_active({active}) failed: {e}");
+            }
+            if !active && watch.returned.replace(false) {
+                relink();
             }
         }
         Cmd::Quit => loop_main.quit(),
@@ -294,4 +333,63 @@ fn run_loop(
 
     mainloop.run();
     Ok(())
+}
+
+/// Registry state for following the configured target, on the PipeWire thread.
+#[derive(Default)]
+struct TargetWatch {
+    /// Set once the registry's initial burst of globals has been delivered, so
+    /// only nodes that appear later count as the target coming back.
+    enumerated: Cell<bool>,
+    active: Cell<bool>,
+    /// The target appeared during a capture; reconnect when it ends.
+    returned: Cell<bool>,
+}
+
+/// WirePlumber moves the stream to the default source when its target
+/// vanishes and leaves it there when the target returns, so the stream is
+/// reconnected whenever a node named `target` appears after start-up; during a
+/// capture, once the capture ends. Returns what must stay alive for that.
+fn follow_target(
+    core: &pw::core::CoreRc,
+    target: String,
+    watch: Rc<TargetWatch>,
+    relink: Rc<dyn Fn()>,
+) -> Result<(
+    pw::registry::RegistryRc,
+    pw::registry::Listener,
+    pw::core::Listener,
+)> {
+    let registry = core.get_registry_rc().context("pw_core_get_registry")?;
+    let registry_listener = {
+        let watch = Rc::clone(&watch);
+        registry
+            .add_listener_local()
+            .global(move |global| {
+                let is_target = global.type_ == pw::types::ObjectType::Node
+                    && global
+                        .props
+                        .is_some_and(|p| p.get(*pw::keys::NODE_NAME) == Some(target.as_str()));
+                if !is_target || !watch.enumerated.get() {
+                    return;
+                }
+                info!("capture target {target} appeared; reconnecting the stream");
+                if watch.active.get() {
+                    watch.returned.set(true);
+                } else {
+                    relink();
+                }
+            })
+            .register()
+    };
+    let enumerated = core.sync(0).context("pw_core_sync")?;
+    let core_listener = core
+        .add_listener_local()
+        .done(move |id, seq| {
+            if id == pw::core::PW_ID_CORE && seq == enumerated {
+                watch.enumerated.set(true);
+            }
+        })
+        .register();
+    Ok((registry, registry_listener, core_listener))
 }

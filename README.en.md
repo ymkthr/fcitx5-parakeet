@@ -110,13 +110,20 @@ Releasing it stops recording; the transcript is inserted at the cursor.
 
 While recording, `🎙️` appears near the cursor followed by a live transcript of what you have said so far (its last 40 characters).
 The live transcript updates about every 0.5 seconds and is only a preview.
-The inserted text comes from transcribing the whole recording again after it stops, with homophone correction.
+The inserted text comes from transcribing the recording again as a whole after it stops, with homophone correction.
 `…` appears while the recording is being transcribed.
 
-Press Escape while recording to cancel.
+Long dictation is inserted in parts while you keep speaking.
+Once 60 seconds of recording are not yet inserted, the part up to the longest pause in their second half is transcribed the same way and inserted, and recording continues.
+Recording ends by itself after 600 seconds in total, and the rest is inserted as if you had stopped.
+
+Press Escape while recording to cancel the part not yet inserted.
 All other keys continue to work normally in the current input method, so you can edit right after dictating.
 
-The trigger does not start dictation while the input method has uncommitted composition text.
+If focus moves to another window while recording (a notification, a window switch), recording stops and is transcribed.
+The text is inserted when the original text field gets focus back.
+
+The trigger does not start dictation while the input method has uncommitted composition text; a message near the cursor asks you to commit it first.
 
 The recognition language defaults to `auto`.
 Both Japanese and English are recognized, and the daemon picks the language.
@@ -130,10 +137,12 @@ Japanese transcripts sometimes pick the wrong homophone, such as 機会 for 機�
 The daemon turns the transcript back into its reading and converts it again with the kana-kanji model [jinen-v2-small](https://huggingface.co/togatogah/jinen-v2-small.gguf).
 The conversion uses up to 64 characters before the cursor as context.
 The context is sent only when the application provides surrounding text, and it is never logged.
+Parts already inserted during a long dictation are context for the parts that follow.
 
 The transcript is replaced only when the model finds its own conversion clearly more likely than the transcript.
-On 96 recorded utterances this fixed 6 errors and broke no correct transcript.
-A correction takes about 50 ms on 4 CPU threads.
+Long transcripts are corrected one sentence at a time, with the preceding sentences as context.
+On 96 short synthesized utterances this fixed 3 errors, and on 22 dictations of 10 seconds to 2 minutes it rewrote no correct word.
+A correction takes about 50 ms per sentence on 4 CPU threads.
 
 `parakeetd-download-models` (`scripts/download-models.sh` in the repository) downloads the model (about 80 MB) into `~/.local/share/parakeetd/models/jinen-v2-small/`.
 Without the model file, correction is disabled and transcripts are typed as recognized.
@@ -146,7 +155,7 @@ To turn correction off, add the following to `~/.config/parakeetd/config.toml`.
 enabled = false
 ```
 
-`margin` is the log-likelihood difference, in nats, that a conversion needs to replace the transcript (default 4.0).
+`margin` is the log-likelihood difference, in nats, that a conversion needs to replace the transcript (default 6.0).
 Larger values replace less often, smaller values more often.
 
 ## Configuration
@@ -170,11 +179,22 @@ See `daemon/config.example.toml` for the complete configuration example.
 target = "alsa_input.example"
 ```
 
+While that microphone is unplugged, the default source is recorded; once it is connected again, recording returns to it.
+
 `partial_interval_ms` sets how often the live transcript updates, in milliseconds (default 500).
 Set it to 0 to turn the live transcript off.
 
 ```toml
 partial_interval_ms = 0
+```
+
+`commit_after_seconds` (default 60) sets how much recording is held before a part is inserted during long dictation.
+A part without any pause is cut at its quietest moment once it reaches `max_seconds` (default 120).
+`max_recording_seconds` (default 600) ends a recording by itself.
+
+```toml
+commit_after_seconds = 30
+max_recording_seconds = 900
 ```
 
 Restart the daemon after changing its configuration.
