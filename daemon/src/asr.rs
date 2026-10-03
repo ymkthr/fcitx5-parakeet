@@ -17,6 +17,11 @@ use crate::sherpa::{ModelFiles, Recognizer, RecognizerConfig, Transcript, Vad};
 const SILENCE_PEAK: f32 = 0.002;
 /// Context kept around the VAD speech span before decoding.
 const SPEECH_PAD_SECONDS: f32 = 0.3;
+/// Context kept before the first speech of a part that starts at a segment
+/// cut. The VAD reports onsets late, and with only SPEECH_PAD_SECONDS the
+/// model drops the part's first word. The start of a capture keeps the short
+/// pad, which leaves the trigger key's click out.
+const CUT_LEAD_SECONDS: f32 = 1.0;
 
 fn pick(dir: &Path, patterns: &[&str]) -> Option<PathBuf> {
     for pattern in patterns {
@@ -202,9 +207,14 @@ impl Gate {
     }
 
     /// Samples worth decoding, or None when the capture holds no speech.
-    pub fn speech(&self, samples: Vec<f32>) -> Option<Vec<f32>> {
+    /// `after_cut` keeps CUT_LEAD_SECONDS before the first speech.
+    pub fn speech(&self, samples: Vec<f32>, after_cut: bool) -> Option<Vec<f32>> {
         let segments = self.segments(&samples);
-        let span = self.span(samples.len(), &segments)?;
+        let mut span = self.span(samples.len(), &segments)?;
+        if after_cut {
+            let lead = (CUT_LEAD_SECONDS * self.sample_rate as f32) as usize;
+            span.start = span.start.min(segments[0].0.saturating_sub(lead));
+        }
         Some(keep(samples, span))
     }
 
@@ -228,19 +238,87 @@ pub fn keep(mut samples: Vec<f32>, range: Range<usize>) -> Vec<f32> {
     samples
 }
 
-/// Where to cut a long preview tail of `len` samples: the middle of the last
-/// pause that leaves at least `min_after` samples after it. A pause is a gap
-/// between speech segments or after the last one.
-pub fn last_pause(segments: &[(usize, usize)], len: usize, min_after: usize) -> Option<usize> {
+/// Pauses as `(length, middle)`: gaps between speech segments and after the
+/// last one.
+fn pauses(segments: &[(usize, usize)], len: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
     let next_starts = segments.iter().skip(1).map(|s| s.0).chain([len]);
     segments
         .iter()
         .map(|s| s.1)
         .zip(next_starts)
         .filter(|(end, next)| next > end)
-        .map(|(end, next)| (end + next) / 2)
+        .map(|(end, next)| (next - end, (end + next) / 2))
+}
+
+/// Where to cut a long preview tail of `len` samples: the middle of the last
+/// pause that leaves at least `min_after` samples after it.
+pub fn last_pause(segments: &[(usize, usize)], len: usize, min_after: usize) -> Option<usize> {
+    pauses(segments, len)
+        .map(|(_, cut)| cut)
         .filter(|cut| cut + min_after <= len)
         .last()
+}
+
+/// Where a capture is split into separately committed segments, in samples.
+pub struct SegmentLimits {
+    /// Uncommitted audio this long is committed up to the longest pause in
+    /// its second half.
+    pub commit_after: usize,
+    /// Uncommitted audio this long without such a pause is cut at the
+    /// quietest frame of its last `window`.
+    pub max: usize,
+    /// Audio a pause cut must leave after it, so a word just begun is not split.
+    pub min_after: usize,
+    pub window: usize,
+    pub frame: usize,
+}
+
+impl SegmentLimits {
+    pub fn new(cfg: &Config) -> Self {
+        let samples = |seconds: f32| (seconds * cfg.sample_rate as f32) as usize;
+        let max = samples(cfg.max_seconds);
+        Self {
+            commit_after: samples(cfg.commit_after_seconds),
+            max,
+            min_after: samples(1.0),
+            window: samples(10.0).min(max),
+            frame: samples(0.1),
+        }
+    }
+}
+
+/// End of the next segment of the uncommitted `samples`, or None to keep
+/// listening. `segments` is the VAD's speech, None without a VAD.
+pub fn segment_cut(
+    samples: &[f32],
+    segments: Option<&[(usize, usize)]>,
+    limits: &SegmentLimits,
+) -> Option<usize> {
+    let len = samples.len();
+    if len < limits.commit_after {
+        return None;
+    }
+    // The longest pause rather than the last: cut at a short pause inside a
+    // sentence, the model drops the clause before it.
+    let pause = match segments {
+        Some([]) => Some(len.saturating_sub(limits.min_after)),
+        Some(segments) => pauses(segments, len)
+            .filter(|&(_, cut)| cut >= len / 2 && cut + limits.min_after <= len)
+            .max_by_key(|&(length, _)| length)
+            .map(|(_, cut)| cut),
+        None => None,
+    };
+    let cut = pause.or_else(|| {
+        let from = len.checked_sub(limits.window).filter(|_| len >= limits.max)?;
+        let quietest = samples[from..]
+            .chunks_exact(limits.frame)
+            .map(|frame| frame.iter().map(|s| s * s).sum::<f32>())
+            .enumerate()
+            .min_by(|a, b| a.1.total_cmp(&b.1))?
+            .0;
+        Some(from + quietest * limits.frame + limits.frame / 2)
+    });
+    cut.filter(|&cut| cut > 0)
 }
 
 /// Joins preview pieces; only words written in ASCII need a space between them.
@@ -334,7 +412,8 @@ mod tests {
 
     #[test]
     fn threshold_is_inclusive() {
-        let r = decide_auto(&cfg(), &t("ok", Some(-0.35)), &t("おけ", None));
+        let c = cfg();
+        let r = decide_auto(&c, &t("ok", Some(c.auto.threshold)), &t("おけ", None));
         assert_eq!(r.lang, "en");
     }
 
@@ -364,6 +443,47 @@ mod tests {
     fn continuous_speech_has_no_cut() {
         assert_eq!(last_pause(&[(0, 12 * 16_000)], 12 * 16_000, 16_000), None);
         assert_eq!(last_pause(&[], 12 * 16_000, 16_000), None);
+    }
+
+    fn limits() -> SegmentLimits {
+        let s = 16_000;
+        SegmentLimits {
+            commit_after: 60 * s,
+            max: 120 * s,
+            min_after: s,
+            window: 10 * s,
+            frame: s / 10,
+        }
+    }
+
+    #[test]
+    fn segment_ends_at_the_longest_pause_of_its_second_half() {
+        let s = 16_000;
+        let speech = [(0, 20 * s), (22 * s, 45 * s), (46 * s, 55 * s), (55 * s + s / 4, 59 * s)];
+        let samples = vec![0.1; 60 * s + s / 2];
+        assert_eq!(segment_cut(&samples[..59 * s], Some(&speech), &limits()), None);
+        // 45-46 s beats the later short pause at 55 s; 20-22 s is in the first
+        // half, and the trailing silence would leave less than a second.
+        assert_eq!(segment_cut(&samples, Some(&speech), &limits()), Some(45 * s + s / 2));
+    }
+
+    #[test]
+    fn speech_without_a_pause_is_cut_at_the_quietest_frame_by_max() {
+        let s = 16_000;
+        let mut samples = vec![0.1; 120 * s];
+        samples[115 * s..115 * s + s / 10].fill(0.01);
+        let speech = [(0, 120 * s)];
+        assert_eq!(segment_cut(&samples[..119 * s], Some(&speech), &limits()), None);
+        assert_eq!(segment_cut(&samples, Some(&speech), &limits()), Some(115 * s + s / 20));
+        // Without a VAD only the hard cut applies.
+        assert_eq!(segment_cut(&samples[..90 * s], None, &limits()), None);
+        assert_eq!(segment_cut(&samples, None, &limits()), Some(115 * s + s / 20));
+    }
+
+    #[test]
+    fn audio_without_speech_is_cut_without_waiting_for_max() {
+        let s = 16_000;
+        assert_eq!(segment_cut(&vec![0.0; 60 * s], Some(&[]), &limits()), Some(59 * s));
     }
 
     #[test]

@@ -191,7 +191,8 @@ impl Vad {
         c.silero_vad.model = keep.path(model);
         c.silero_vad.threshold = 0.5;
         c.silero_vad.min_silence_duration = 0.25;
-        c.silero_vad.min_speech_duration = 0.2;
+        // A clipped "はい" is about 0.2 s of speech; at 0.2 the gate dropped it.
+        c.silero_vad.min_speech_duration = 0.1;
         c.silero_vad.max_speech_duration = max_speech_seconds;
         c.silero_vad.window_size = 512;
         c.sample_rate = sample_rate;

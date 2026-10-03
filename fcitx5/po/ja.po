@@ -46,3 +46,7 @@ msgstr "parakeetd が起動していません"
 #: src/parakeet.cpp
 msgid "Parakeet: "
 msgstr "Parakeet: "
+
+#: src/parakeet.cpp
+msgid "Commit the text being composed before dictating"
+msgstr "変換中の文字を確定してから話してください"

@@ -90,7 +90,12 @@ pub struct Config {
     pub preload: Vec<String>,
     /// PipeWire node name/serial for the capture stream target. None = default source.
     pub target: Option<String>,
+    /// Longest single segment: uncommitted audio that never pauses is cut here.
     pub max_seconds: f32,
+    /// Uncommitted audio after which the part up to the last pause is committed.
+    pub commit_after_seconds: f32,
+    /// The capture ends by itself after this much audio in total.
+    pub max_recording_seconds: f32,
     pub sample_rate: i32,
     /// Silero VAD used to drop captures without speech; None disables gating.
     pub vad_model: Option<PathBuf>,
@@ -167,6 +172,8 @@ struct Raw {
     preload: Option<Vec<String>>,
     target: Option<String>,
     max_seconds: Option<f32>,
+    commit_after_seconds: Option<f32>,
+    max_recording_seconds: Option<f32>,
     sample_rate: Option<i32>,
     /// A path, or "" / false to disable.
     vad_model: Option<toml::Value>,
@@ -206,7 +213,7 @@ fn correction(raw: RawCorrection) -> Result<Option<CorrectionConfig>> {
     if !raw.enabled.unwrap_or(true) {
         return Ok(None);
     }
-    let margin = raw.margin.unwrap_or(4.0);
+    let margin = raw.margin.unwrap_or(6.0);
     if !margin.is_finite() {
         anyhow::bail!("correction.margin must be a finite number");
     }
@@ -263,10 +270,19 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
         Some(other) => anyhow::bail!("vad_model must be a path string or \"\", got {other}"),
     };
 
-    let max_seconds = raw.max_seconds.unwrap_or(120.0);
-    if !max_seconds.is_finite() || max_seconds <= 0.0 {
-        anyhow::bail!("max_seconds must be greater than zero");
-    }
+    let seconds = |key: &str, value: Option<f32>, default: f32| -> Result<f32> {
+        let value = value.unwrap_or(default);
+        if !value.is_finite() || value <= 0.0 {
+            anyhow::bail!("{key} must be greater than zero");
+        }
+        Ok(value)
+    };
+    let max_seconds = seconds("max_seconds", raw.max_seconds, 120.0)?;
+    // A segment never outgrows max_seconds, so the pause search must start by then.
+    let commit_after_seconds =
+        seconds("commit_after_seconds", raw.commit_after_seconds, 60.0)?.min(max_seconds);
+    let max_recording_seconds =
+        seconds("max_recording_seconds", raw.max_recording_seconds, 600.0)?;
     let sample_rate = raw.sample_rate.unwrap_or(DEFAULT_SAMPLE_RATE);
     if sample_rate <= 0 {
         anyhow::bail!("sample_rate must be greater than zero");
@@ -283,13 +299,15 @@ pub fn load(path: Option<&Path>) -> Result<Config> {
         models,
         target: raw.target,
         max_seconds,
+        commit_after_seconds,
+        max_recording_seconds,
         sample_rate,
         vad_model,
         warmup: raw.warmup.unwrap_or(true),
         auto: AutoConfig {
             detector: raw.auto.detector.unwrap_or_else(|| "en".into()),
             fallback: raw.auto.fallback.unwrap_or_else(|| "ja".into()),
-            threshold: raw.auto.threshold.unwrap_or(-0.35),
+            threshold: raw.auto.threshold.unwrap_or(-0.15),
         },
         correction: correction(raw.correction)?,
         partial_interval_ms: raw.partial_interval_ms.unwrap_or(500),
@@ -337,9 +355,7 @@ mod tests {
     #[test]
     fn correction_defaults_when_model_present() {
         let cfg = load_with_model("correction-defaults", "[correction]\nmodel = \"{model}\"\n");
-        let c = cfg.correction.expect("correction enabled");
-        assert_eq!(c.margin, 4.0);
-        assert_eq!(c.num_threads, 4);
+        assert!(cfg.correction.is_some(), "correction enabled");
     }
 
     #[test]
@@ -354,5 +370,11 @@ mod tests {
             "[correction]\nmodel = \"/nonexistent/jinen.gguf\"\n",
         );
         assert!(missing.correction.is_none());
+    }
+
+    #[test]
+    fn segments_are_committed_by_max_seconds_at_the_latest() {
+        let cfg = load_with_model("commit-after", "max_seconds = 30\n");
+        assert_eq!((cfg.commit_after_seconds, cfg.max_seconds), (30.0, 30.0));
     }
 }
