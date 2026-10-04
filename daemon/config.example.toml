@@ -1,7 +1,7 @@
-# parakeetd settings: copy to ~/.config/parakeetd/config.toml (every key is optional).
+# voice-jad settings: copy to ~/.config/voice-jad/config.toml (every key is optional).
 
-# Unix socket. Leave unset when started through systemd (parakeetd.socket owns it).
-# socket_path = "/run/user/1000/parakeetd.sock"
+# Unix socket. Leave unset when started through systemd (voice-jad.socket owns it).
+# socket_path = "/run/user/1000/voice-jad.sock"
 
 # PipeWire source node name. Unset = the session's default source. While the
 # node is absent (unplugged), WirePlumber records from the default source; the
@@ -28,7 +28,7 @@
 
 # Silero VAD drops captures without speech instead of letting a model invent
 # fillers such as "うん" from room noise. An empty string disables it.
-# vad_model = "~/.local/share/parakeetd/models/silero_vad.onnx"
+# vad_model = "~/.local/share/voice-jad/models/silero_vad.onnx"
 
 # While recording, re-transcribe the audio not yet entered this often
 # (milliseconds) and show it as a preview near the cursor. The entered text
@@ -36,12 +36,12 @@
 # partial_interval_ms = 500
 
 [models.ja]
-dir = "~/.local/share/parakeetd/models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8"
+dir = "~/.local/share/voice-jad/models/sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8"
 # kind = "nemo_ctc"
 num_threads = 4
 
 [models.en]
-dir = "~/.local/share/parakeetd/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+dir = "~/.local/share/voice-jad/models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
 # kind = "nemo_transducer"
 num_threads = 4
 
@@ -63,7 +63,7 @@ threshold = -0.15
 # automatically when either model file is missing.
 [correction]
 # enabled = true
-# model = "~/.local/share/parakeetd/models/jinen-v2-small/jinen-v2-small-Q5_K_M.gguf"
-# judge_model = "~/.local/share/parakeetd/models/tinyswallow-1.5b/TinySwallow-1.5B-Q4_K_M.gguf"
+# model = "~/.local/share/voice-jad/models/jinen-v2-small/jinen-v2-small-Q5_K_M.gguf"
+# judge_model = "~/.local/share/voice-jad/models/tinyswallow-1.5b/TinySwallow-1.5B-Q4_K_M.gguf"
 # judge_margin = 2.0
 # num_threads = 4

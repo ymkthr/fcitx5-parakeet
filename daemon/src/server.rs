@@ -5,7 +5,7 @@
 //! Event:     `<id> <EVENT> [payload]`, pushed for an earlier request `<id>`
 //!
 //! Commands:
-//!   HELLO            -> `OK parakeetd <version>`
+//!   HELLO            -> `OK voice-jad <version>`
 //!   LOAD <lang>      -> `OK` once the model(s) for <lang> are in memory
 //!   START <lang> [context]
 //!                    -> `OK` once the microphone capture is running. context is
@@ -222,7 +222,7 @@ impl Daemon {
         let arg = arg.to_string();
 
         match command.as_str() {
-            "HELLO" => ok(w, &id, &format!("parakeetd {}", env!("CARGO_PKG_VERSION"))).await,
+            "HELLO" => ok(w, &id, &format!("voice-jad {}", env!("CARGO_PKG_VERSION"))).await,
             "STATUS" => {
                 let recording = if self.active.lock().is_some() { 1 } else { 0 };
                 let payload = format!(

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Make CapsLock act as the Menu key (fcitx5-parakeet's default trigger) via the
+# Make CapsLock act as the Menu key (fcitx5-voice-ja's default trigger) via the
 # desktop's XKB options. Only GNOME is automated; other desktops get instructions.
 #
 #   scripts/capslock-menu.sh apply    add caps:menu (keeps other options)
@@ -48,7 +48,7 @@ Not a GNOME session; make CapsLock a Menu key yourself (XKB option '$OPTION'):
                 > "Make Caps Lock an additional Menu key"
   Sway          input type:keyboard xkb_options $OPTION
 Or keep CapsLock and choose another trigger key in fcitx5-configtool
-(Addons > Parakeet Voice Input).
+(Addons > Japanese Voice Input).
 EOF
 }
 

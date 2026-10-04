@@ -7,9 +7,9 @@
 #
 #   DESTDIR             package root (debian/<pkg>, %{buildroot}, ...)
 #   SHERPA_ONNX_LIB_DIR unpacked sherpa-onnx release lib/ directory
-#   LIBDIR              /usr/lib or /usr/lib64; parakeetd's private libraries
-#                       go to LIBDIR/parakeetd and must match SHERPA_ONNX_RPATH
-#   LICENSEDIR          default /usr/share/licenses/fcitx5-parakeet
+#   LIBDIR              /usr/lib or /usr/lib64; voice-jad's private libraries
+#                       go to LIBDIR/voice-jad and must match SHERPA_ONNX_RPATH
+#   LICENSEDIR          default /usr/share/licenses/fcitx5-voice-ja
 #
 # Runs from the source root after `cmake --build fcitx-build` and
 # `cargo build --release` in daemon/.
@@ -18,16 +18,16 @@ set -euo pipefail
 dest=$1
 sherpa_lib=$2
 libdir=$3
-pkg=fcitx5-parakeet
+pkg=fcitx5-voice-ja
 licensedir=${4:-/usr/share/licenses/$pkg}
 
 DESTDIR="$dest" cmake --install fcitx-build
-install -Dm755 daemon/target/release/parakeetd "$dest/usr/bin/parakeetd"
-install -Dm755 daemon/target/release/parakeet-ctl "$dest/usr/bin/parakeet-ctl"
-install -Dm755 scripts/download-models.sh "$dest/usr/bin/parakeetd-download-models"
-install -Dm755 scripts/capslock-menu.sh "$dest/usr/bin/parakeet-capslock-menu"
-install -Dm755 -t "$dest$libdir/parakeetd" "$sherpa_lib"/*.so
-install -Dm644 -t "$dest/usr/lib/systemd/user" systemd/parakeetd.service systemd/parakeetd.socket
+install -Dm755 daemon/target/release/voice-jad "$dest/usr/bin/voice-jad"
+install -Dm755 daemon/target/release/voice-ja-ctl "$dest/usr/bin/voice-ja-ctl"
+install -Dm755 scripts/download-models.sh "$dest/usr/bin/voice-jad-download-models"
+install -Dm755 scripts/capslock-menu.sh "$dest/usr/bin/voice-ja-capslock-menu"
+install -Dm755 -t "$dest$libdir/voice-jad" "$sherpa_lib"/*.so
+install -Dm644 -t "$dest/usr/lib/systemd/user" systemd/voice-jad.service systemd/voice-jad.socket
 install -Dm644 daemon/config.example.toml "$dest/usr/share/doc/$pkg/config.example.toml"
 install -Dm644 THIRD_PARTY_NOTICES.md "$dest/usr/share/doc/$pkg/THIRD_PARTY_NOTICES.md"
 install -Dm644 LICENSE "$dest$licensedir/LICENSE"

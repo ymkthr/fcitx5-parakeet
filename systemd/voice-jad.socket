@@ -1,0 +1,9 @@
+[Unit]
+Description=fcitx5-voice-ja speech-to-text daemon socket
+
+[Socket]
+ListenStream=%t/voice-jad.sock
+SocketMode=0600
+
+[Install]
+WantedBy=sockets.target

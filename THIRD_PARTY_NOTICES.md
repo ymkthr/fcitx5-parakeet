@@ -1,6 +1,6 @@
 # Third-party notices
 
-fcitx5-parakeet itself is released under the MIT License (see `LICENSE`).
+fcitx5-voice-ja itself is released under the MIT License (see `LICENSE`).
 The binary package and the models it downloads include or depend on the
 following third-party components.
 
@@ -11,7 +11,7 @@ following third-party components.
 - Copyright (c) 2023 Xiaomi Corporation
 - License: Apache License 2.0 (`LICENSE-APACHE-2.0`)
 - Source: https://github.com/k2-fsa/sherpa-onnx
-- Files: `/usr/lib/parakeetd/libsherpa-onnx-c-api.so`, `/usr/lib/parakeetd/libsherpa-onnx-cxx-api.so`,
+- Files: `/usr/lib/voice-jad/libsherpa-onnx-c-api.so`, `/usr/lib/voice-jad/libsherpa-onnx-cxx-api.so`,
   and the C API header vendored at `daemon/vendor/sherpa-onnx/c-api.h`
 
 ### ONNX Runtime
@@ -19,21 +19,21 @@ following third-party components.
 - Copyright (c) Microsoft Corporation
 - License: MIT License (`licenses/onnxruntime.LICENSE`)
 - Source: https://github.com/microsoft/onnxruntime
-- Files: `/usr/lib/parakeetd/libonnxruntime.so` (bundled in the sherpa-onnx release archive)
+- Files: `/usr/lib/voice-jad/libonnxruntime.so` (bundled in the sherpa-onnx release archive)
 
 ### llama.cpp
 
 - Copyright (c) 2023-2026 The ggml authors
 - License: MIT License (`licenses/llama.cpp.LICENSE`)
 - Source: https://github.com/ggml-org/llama.cpp
-- Statically linked into `parakeetd` through the `llama-cpp-2` crate; runs the correction models
+- Statically linked into `voice-jad` through the `llama-cpp-2` crate; runs the correction models
 
 ### IPADIC (mecab-ipadic 2.7.0)
 
 - Copyright 2000-2003 Nara Institute of Science and Technology
 - License: IPADIC license (`licenses/ipadic.LICENSE`)
 - Source: https://github.com/lindera/lindera (dictionary build of mecab-ipadic-2.7.0-20250920)
-- Embedded in `parakeetd` through the `lindera-ipadic` crate; provides readings for the correction model
+- Embedded in `voice-jad` through the `lindera-ipadic` crate; provides readings for the correction model
 
 ### Rust crates
 
@@ -45,7 +45,7 @@ its data. Some crates also offer BSL-1.0, Unlicense or Zlib as alternatives.
 
 ## Downloaded at install time
 
-The installer downloads these models into `~/.local/share/parakeetd/models/`.
+The installer downloads these models into `~/.local/share/voice-jad/models/`.
 They are not part of the package.
 
 ### NVIDIA Parakeet TDT 0.6B v3 (`parakeet-tdt-0.6b-v3`)

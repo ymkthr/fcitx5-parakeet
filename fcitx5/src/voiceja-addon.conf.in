@@ -1,8 +1,8 @@
 [Addon]
-Name=Parakeet Voice Input
+Name=Japanese Voice Input
 Comment=Push-to-talk speech input via NVIDIA Parakeet (sherpa-onnx)
 Category=Module
-Library=parakeet
+Library=voiceja
 Type=SharedLibrary
 OnDemand=False
 Configurable=True

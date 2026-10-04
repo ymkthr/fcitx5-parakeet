@@ -1,6 +1,6 @@
-//! Diagnostic client for the parakeetd line protocol.
+//! Diagnostic client for the voice-jad line protocol.
 
-use parakeetd::{asr, config};
+use voice_jad::{asr, config};
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -137,7 +137,7 @@ impl Client {
 
 fn usage() -> ! {
     eprintln!(
-        "usage: parakeet-ctl [--socket PATH] <hello|status|load LANG|rec LANG [--seconds N]>"
+        "usage: voice-ja-ctl [--socket PATH] <hello|status|load LANG|rec LANG [--seconds N]>"
     );
     std::process::exit(2);
 }
@@ -154,7 +154,7 @@ fn main() -> Result<()> {
         config::load(None)
             .map(|c| c.socket_path)
             .unwrap_or_else(|e| {
-                eprintln!("parakeet-ctl: {e:#}");
+                eprintln!("voice-ja-ctl: {e:#}");
                 std::process::exit(1);
             })
     });
@@ -219,7 +219,7 @@ fn main() -> Result<()> {
             }
         }
         "-h" | "--help" => {
-            println!("usage: parakeet-ctl [--socket PATH] <hello|status|load LANG|rec LANG [--seconds N]>");
+            println!("usage: voice-ja-ctl [--socket PATH] <hello|status|load LANG|rec LANG [--seconds N]>");
             return Ok(());
         }
         _ => usage(),

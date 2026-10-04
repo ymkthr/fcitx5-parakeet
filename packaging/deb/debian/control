@@ -1,4 +1,4 @@
-Source: fcitx5-parakeet
+Source: fcitx5-voice-ja
 Section: utils
 Priority: optional
 Maintainer: ymkthr <ymkthr@users.noreply.github.com>
@@ -17,18 +17,20 @@ Build-Depends: debhelper-compat (= 13),
                libfcitx5utils-dev,
                libpipewire-0.3-dev
 Standards-Version: 4.7.0
-Homepage: https://github.com/ymkthr/fcitx5-parakeet
+Homepage: https://github.com/ymkthr/fcitx5-voice-ja
 
-Package: fcitx5-parakeet
+Package: fcitx5-voice-ja
 Architecture: amd64
 Depends: ${shlibs:Depends}, ${misc:Depends},
          fcitx5,
          pipewire
 Recommends: curl
+Breaks: fcitx5-parakeet
+Replaces: fcitx5-parakeet
 Description: Offline Japanese and English speech input for fcitx5
- fcitx5-parakeet adds push-to-talk dictation to fcitx5 using NVIDIA Parakeet
+ fcitx5-voice-ja adds push-to-talk dictation to fcitx5 using NVIDIA Parakeet
  models running locally through sherpa-onnx. It ships an fcitx5 addon and a
- per-user daemon (parakeetd) that captures audio from PipeWire.
+ per-user daemon (voice-jad) that captures audio from PipeWire.
  .
- The speech models are not included; run parakeetd-download-models as your
+ The speech models are not included; run voice-jad-download-models as your
  desktop user after installing.

@@ -16,23 +16,23 @@
 
 namespace fcitx {
 
-FCITX_DEFINE_LOG_CATEGORY(parakeet_client, "parakeet-client");
-#define PK_DEBUG() FCITX_LOGC(parakeet_client, Debug)
-#define PK_WARN() FCITX_LOGC(parakeet_client, Warn)
+FCITX_DEFINE_LOG_CATEGORY(voiceja_client, "voiceja-client");
+#define PK_DEBUG() FCITX_LOGC(voiceja_client, Debug)
+#define PK_WARN() FCITX_LOGC(voiceja_client, Warn)
 
-std::string defaultParakeetSocketPath() {
+std::string defaultVoiceJaSocketPath() {
     if (const char *runtime = std::getenv("XDG_RUNTIME_DIR"); runtime && *runtime) {
-        return std::string(runtime) + "/parakeetd.sock";
+        return std::string(runtime) + "/voice-jad.sock";
     }
-    return "/run/user/" + std::to_string(getuid()) + "/parakeetd.sock";
+    return "/run/user/" + std::to_string(getuid()) + "/voice-jad.sock";
 }
 
-ParakeetClient::ParakeetClient(EventLoop &loop, std::string socketPath)
+VoiceJaClient::VoiceJaClient(EventLoop &loop, std::string socketPath)
     : loop_(loop), socketPath_(std::move(socketPath)) {}
 
-ParakeetClient::~ParakeetClient() { disconnect("client destroyed"); }
+VoiceJaClient::~VoiceJaClient() { disconnect("client destroyed"); }
 
-void ParakeetClient::setSocketPath(std::string socketPath) {
+void VoiceJaClient::setSocketPath(std::string socketPath) {
     if (socketPath == socketPath_) {
         return;
     }
@@ -40,7 +40,7 @@ void ParakeetClient::setSocketPath(std::string socketPath) {
     disconnect("socket path changed");
 }
 
-bool ParakeetClient::ensureConnected() {
+bool VoiceJaClient::ensureConnected() {
     if (fd_.isValid()) {
         return true;
     }
@@ -59,7 +59,7 @@ bool ParakeetClient::ensureConnected() {
     }
     // AF_UNIX connect completes synchronously unless the listen backlog is
     // full; systemd socket activation accepts immediately and buffers our
-    // request until parakeetd is up.
+    // request until voice-jad is up.
     if (::connect(fd.fd(), reinterpret_cast<const sockaddr *>(&addr), sizeof(addr)) < 0 &&
         errno != EINPROGRESS && errno != EAGAIN) {
         PK_WARN() << "connect(" << socketPath_ << "): " << std::strerror(errno);
@@ -80,7 +80,7 @@ bool ParakeetClient::ensureConnected() {
     return true;
 }
 
-void ParakeetClient::disconnect(const std::string &reason) {
+void VoiceJaClient::disconnect(const std::string &reason) {
     ioEvent_.reset();
     fd_.reset();
     inbuf_.clear();
@@ -96,7 +96,7 @@ void ParakeetClient::disconnect(const std::string &reason) {
     }
 }
 
-bool ParakeetClient::writeAll(std::string_view data) {
+bool VoiceJaClient::writeAll(std::string_view data) {
     while (!data.empty()) {
         const ssize_t n = ::send(fd_.fd(), data.data(), data.size(), MSG_NOSIGNAL);
         if (n < 0) {
@@ -113,7 +113,7 @@ bool ParakeetClient::writeAll(std::string_view data) {
     return true;
 }
 
-uint64_t ParakeetClient::request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec,
+uint64_t VoiceJaClient::request(std::string_view command, std::string_view arg, Reply reply, uint64_t timeoutUsec,
                                  Event onEvent, std::function<void()> onTimeout) {
     if (!ensureConnected()) {
         return 0;
@@ -151,7 +151,7 @@ uint64_t ParakeetClient::request(std::string_view command, std::string_view arg,
     return id;
 }
 
-void ParakeetClient::settle(uint64_t id, bool ok, std::string payload) {
+void VoiceJaClient::settle(uint64_t id, bool ok, std::string payload) {
     PK_DEBUG() << "settle request " << id << " ok=" << ok << " pending=" << pending_.size();
     auto it = pending_.find(id);
     if (it == pending_.end()) {
@@ -165,7 +165,7 @@ void ParakeetClient::settle(uint64_t id, bool ok, std::string payload) {
     entry.reply(ok, std::move(payload));
 }
 
-void ParakeetClient::onReadable() {
+void VoiceJaClient::onReadable() {
     char buf[4096];
     for (;;) {
         const ssize_t n = ::recv(fd_.fd(), buf, sizeof(buf), 0);
@@ -194,7 +194,7 @@ void ParakeetClient::onReadable() {
     inbuf_.erase(0, start);
 }
 
-void ParakeetClient::handleLine(std::string_view line) {
+void VoiceJaClient::handleLine(std::string_view line) {
     const size_t idEnd = line.find(' ');
     if (idEnd == std::string_view::npos) {
         PK_WARN() << "malformed reply: " << std::string(line);

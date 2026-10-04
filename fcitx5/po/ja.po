@@ -1,52 +1,52 @@
 msgid ""
 msgstr ""
-"Project-Id-Version: fcitx5-parakeet 0.3.0\n"
+"Project-Id-Version: fcitx5-voice-ja 0.3.0\n"
 "Language: ja\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
-#: src/parakeet-addon.conf.in
-msgid "Parakeet Voice Input"
-msgstr "Parakeet 音声入力"
+#: src/voiceja-addon.conf.in
+msgid "Japanese Voice Input"
+msgstr "日本語音声入力"
 
-#: src/parakeet-addon.conf.in
+#: src/voiceja-addon.conf.in
 msgid "Push-to-talk speech input via NVIDIA Parakeet (sherpa-onnx)"
 msgstr "NVIDIA Parakeet (sherpa-onnx) によるプッシュトゥトーク音声入力"
 
-#: src/parakeet.h
+#: src/voiceja.h
 msgid "Trigger key"
 msgstr "録音キー"
 
-#: src/parakeet.h
+#: src/voiceja.h
 msgid "Cancel key (while recording)"
 msgstr "キャンセルキー（録音中）"
 
-#: src/parakeet.h
+#: src/voiceja.h
 msgid "Tap threshold (ms): a shorter press locks the recording, a longer press records while held"
 msgstr "タップ判定 (ms): これより短い押下は録音を続け、長い押下は押している間だけ録音する"
 
-#: src/parakeet.h
-msgid "Language sent to parakeetd (auto, ja or en)"
-msgstr "parakeetd に渡す言語（auto、ja、en）"
+#: src/voiceja.h
+msgid "Language sent to voice-jad (auto, ja or en)"
+msgstr "voice-jad に渡す言語（auto、ja、en）"
 
-#: src/parakeet.h
-msgid "parakeetd socket (empty: $XDG_RUNTIME_DIR/parakeetd.sock)"
-msgstr "parakeetd のソケット（空欄: $XDG_RUNTIME_DIR/parakeetd.sock）"
+#: src/voiceja.h
+msgid "voice-jad socket (empty: $XDG_RUNTIME_DIR/voice-jad.sock)"
+msgstr "voice-jad のソケット（空欄: $XDG_RUNTIME_DIR/voice-jad.sock）"
 
-#: src/parakeet.h
+#: src/voiceja.h
 msgid "Show recording status near the cursor"
 msgstr "カーソル付近に録音状態を表示する"
 
-#: src/parakeet.cpp
-msgid "parakeetd is not running"
-msgstr "parakeetd が起動していません"
+#: src/voiceja.cpp
+msgid "voice-jad is not running"
+msgstr "voice-jad が起動していません"
 
-#: src/parakeet.cpp
-msgid "Parakeet: "
-msgstr "Parakeet: "
+#: src/voiceja.cpp
+msgid "Voice input: "
+msgstr "音声入力: "
 
-#: src/parakeet.cpp
+#: src/voiceja.cpp
 msgid "Commit the text being composed before dictating"
 msgstr "変換中の文字を確定してから話してください"

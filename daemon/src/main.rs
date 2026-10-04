@@ -1,11 +1,11 @@
-//! parakeetd: local speech-to-text daemon for fcitx5-parakeet.
+//! voice-jad: local speech-to-text daemon for fcitx5-voice-ja.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use log::{info, LevelFilter};
-use parakeetd::{config, server, sherpa};
+use voice_jad::{config, server, sherpa};
 
 struct Args {
     config: Option<PathBuf>,
@@ -38,7 +38,7 @@ fn parse_args() -> Result<Args> {
             }
             "-v" | "--verbose" => args.verbose = true,
             "-h" | "--help" => {
-                println!("usage: parakeetd [--config FILE] [--socket PATH] [-v]");
+                println!("usage: voice-jad [--config FILE] [--socket PATH] [-v]");
                 std::process::exit(0);
             }
             other => bail!("unknown argument {other:?}"),
@@ -70,7 +70,7 @@ fn main() -> Result<()> {
         let languages = cfg.languages().join(", ");
         let daemon = server::Daemon::new(cfg);
         info!(
-            "parakeetd {} ready (sherpa-onnx {}, languages: {languages})",
+            "voice-jad {} ready (sherpa-onnx {}, languages: {languages})",
             env!("CARGO_PKG_VERSION"),
             sherpa::version()
         );

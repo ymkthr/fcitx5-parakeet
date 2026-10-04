@@ -1,28 +1,28 @@
-# fcitx5-parakeet
+# fcitx5-voice-ja
 
 [日本語](README.md) | English
 
-fcitx5-parakeet provides local voice input for fcitx5 using NVIDIA Parakeet.
+fcitx5-voice-ja provides local voice input for fcitx5 using NVIDIA Parakeet.
 It runs as a module that stays loaded in fcitx5 and starts dictation the moment you press a trigger key.
 It never switches the input method itself.
 
 ## Installation
 
-fcitx5-parakeet supports Arch Linux and can be packaged for Debian/Ubuntu (`.deb`) and Fedora (`.rpm`). It expects fcitx5 and PipeWire to be running.
+fcitx5-voice-ja supports Arch Linux and can be packaged for Debian/Ubuntu (`.deb`) and Fedora (`.rpm`). It expects fcitx5 and PipeWire to be running.
 
 ### From the AUR
 
 ```sh
-paru -S fcitx5-parakeet   # or: yay -S fcitx5-parakeet
+paru -S fcitx5-voice-ja   # or: yay -S fcitx5-voice-ja
 ```
 
 The package does not include the models. After installing, run the following as your desktop user:
 
 ```sh
-parakeetd-download-models
-systemctl --user enable --now parakeetd.socket
+voice-jad-download-models
+systemctl --user enable --now voice-jad.socket
 busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
-parakeet-capslock-menu apply   # GNOME: make CapsLock act as the Menu key
+voice-ja-capslock-menu apply   # GNOME: make CapsLock act as the Menu key
 ```
 
 ### From a deb or rpm
@@ -32,8 +32,8 @@ On Debian/Ubuntu and Fedora, build the package on a machine with docker or podma
 ```sh
 packaging/build.sh deb    # writes a .deb to packaging/dist/ (default image: debian:trixie)
 packaging/build.sh rpm    # writes an .rpm to packaging/dist/ (default image: fedora:42)
-sudo apt install ./packaging/dist/fcitx5-parakeet_*.deb
-sudo dnf install ./packaging/dist/fcitx5-parakeet-*.rpm
+sudo apt install ./packaging/dist/fcitx5-voice-ja_*.deb
+sudo dnf install ./packaging/dist/fcitx5-voice-ja-*.rpm
 ```
 
 The post-install steps are the same as for the AUR package. See `packaging/README.md` for details.
@@ -48,24 +48,40 @@ Run the installer from the repository root.
 
 The installer performs the following steps:
 
-1. Builds and installs the Rust daemon and fcitx5 addon.
-2. Downloads the Japanese, English, and Silero VAD models, and for homophone correction the jinen-v2-small kana-kanji model and the TinySwallow-1.5B language model.
-3. Enables the systemd user socket.
-4. Restarts fcitx5, if it is running, so the new module loads.
-5. On GNOME, adds the XKB option `caps:menu` so CapsLock acts as the Menu key.
+1. Uninstalls the former fcitx5-parakeet package, if present, and moves its settings and models to the new locations.
+2. Builds and installs the Rust daemon and fcitx5 addon.
+3. Downloads the Japanese, English, and Silero VAD models, and for homophone correction the jinen-v2-small kana-kanji model and the TinySwallow-1.5B language model.
+4. Enables the systemd user socket.
+5. Restarts fcitx5, if it is running, so the new module loads.
+6. On GNOME, adds the XKB option `caps:menu` so CapsLock acts as the Menu key.
 
 The build requires `base-devel`, `cargo`, `clang`, `cmake`, `extra-cmake-modules`, and `gettext`.
 `makepkg` prompts to install missing packages.
-The speech recognition models are stored in `~/.local/share/parakeetd/models/`.
+The speech recognition models are stored in `~/.local/share/voice-jad/models/`.
 
 If fcitx5 was not running during installation, start it manually.
 
 Verify the connection to the daemon after installation.
 
 ```sh
-parakeet-ctl hello
-parakeet-ctl status
+voice-ja-ctl hello
+voice-ja-ctl status
 ```
+
+### Migrating from fcitx5-parakeet
+
+This project was formerly named fcitx5-parakeet. `./scripts/install.sh` migrates automatically.
+When switching packages, run the following as your desktop user before installing the new package.
+
+```sh
+systemctl --user disable --now parakeetd.socket parakeetd.service
+mv ~/.config/parakeetd ~/.config/voice-jad
+mv ~/.local/share/parakeetd ~/.local/share/voice-jad
+mv ~/.config/fcitx5/conf/parakeet.conf ~/.config/fcitx5/conf/voiceja.conf
+```
+
+Skip any path that does not exist. If `config.toml` sets model paths, change `/parakeetd/` to `/voice-jad/`.
+The environment variables `PARAKEETD_CONFIG` and `PARAKEETD_MODELS_DIR` are now `VOICE_JAD_CONFIG` and `VOICE_JAD_MODELS_DIR`.
 
 ## Usage
 
@@ -87,7 +103,7 @@ To undo the remap, run the following command.
 It removes only `caps:menu` and keeps the other options.
 
 ```sh
-parakeet-capslock-menu revert
+voice-ja-capslock-menu revert
 ```
 
 On desktops other than GNOME, the installer changes nothing and prints instructions instead.
@@ -147,12 +163,12 @@ On 22 dictations of 10 seconds to 2 minutes it cut character errors from 128 to 
 On 4 CPU threads a correction takes about 0.1 s for a short utterance, 1 s for 30 seconds of speech and 2.4 to 3.1 s for a minute.
 A long recording is cut at pauses while it continues and the parts are corrected as they are cut, so after it stops only the last part is left to correct (for a 2.5-minute recording, 7.1 s from stop to text against 4.3 s without correction).
 
-`parakeetd-download-models` (`scripts/download-models.sh` in the repository) downloads the models (about 80 MB for jinen-v2-small, 940 MB for TinySwallow-1.5B) into `~/.local/share/parakeetd/models/`.
+`voice-jad-download-models` (`scripts/download-models.sh` in the repository) downloads the models (about 80 MB for jinen-v2-small, 940 MB for TinySwallow-1.5B) into `~/.local/share/voice-jad/models/`.
 Correction adds about 1.1 GB to the daemon's memory use.
 Without either model file, correction is disabled and transcripts are typed as recognized.
 Correction needs a CPU with AVX2, FMA, F16C and BMI2 (Intel Haswell, AMD Excavator or later); on other CPUs it is disabled automatically.
 
-To turn correction off, add the following to `~/.config/parakeetd/config.toml`.
+To turn correction off, add the following to `~/.config/voice-jad/config.toml`.
 
 ```toml
 [correction]
@@ -165,8 +181,8 @@ The former `margin` setting was removed; the daemon refuses to start while the c
 
 ## Configuration
 
-Open `fcitx5-configtool`, go to Addons, and select "Parakeet Voice Input" to configure it.
-The settings are stored in `~/.config/fcitx5/conf/parakeet.conf`.
+Open `fcitx5-configtool`, go to Addons, and select "Japanese Voice Input" to configure it.
+The settings are stored in `~/.config/fcitx5/conf/voiceja.conf`.
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -174,10 +190,10 @@ The settings are stored in `~/.config/fcitx5/conf/parakeet.conf`.
 | CancelKey | Escape | Cancels the current recording |
 | TapThresholdMs | 250 | Presses shorter than this lock the recording on; longer presses record only while held |
 | Language | auto | auto, ja, or en |
-| SocketPath | Empty | Uses `$XDG_RUNTIME_DIR/parakeetd.sock` when empty |
+| SocketPath | Empty | Uses `$XDG_RUNTIME_DIR/voice-jad.sock` when empty |
 | ShowStatus | True | Shows `🎙️` with the live transcript, or `…`, near the cursor |
 
-To use a different microphone, create `~/.config/parakeetd/config.toml` and specify its PipeWire source name.
+To use a different microphone, create `~/.config/voice-jad/config.toml` and specify its PipeWire source name.
 See `daemon/config.example.toml` for the complete configuration example.
 
 ```toml
@@ -205,18 +221,18 @@ max_recording_seconds = 900
 Restart the daemon after changing its configuration.
 
 ```sh
-systemctl --user restart parakeetd.service
+systemctl --user restart voice-jad.service
 ```
 
 Use the following command to inspect daemon logs.
 
 ```sh
-journalctl --user -u parakeetd.service -f
+journalctl --user -u voice-jad.service -f
 ```
 
 ## License
 
-fcitx5-parakeet itself is released under the MIT License (`LICENSE`).
+fcitx5-voice-ja itself is released under the MIT License (`LICENSE`).
 
 The package bundles the shared libraries of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache License 2.0, `LICENSE-APACHE-2.0`) and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT License) as the speech recognition runtime.
 

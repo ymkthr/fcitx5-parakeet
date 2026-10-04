@@ -1,16 +1,19 @@
 # Maintainer: ymkthr <https://github.com/ymkthr>
-pkgname=fcitx5-parakeet
+pkgname=fcitx5-voice-ja
 pkgver=0.3.0
 pkgrel=1
 pkgdesc="Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet"
 arch=(x86_64)
-url="https://github.com/ymkthr/fcitx5-parakeet"
+url="https://github.com/ymkthr/fcitx5-voice-ja"
 # MIT: this project, ONNX Runtime and llama.cpp; Apache-2.0: the bundled sherpa-onnx
-# libraries; IPADIC: the dictionary embedded in parakeetd.
+# libraries; IPADIC: the dictionary embedded in voice-jad.
 license=(MIT Apache-2.0 LicenseRef-IPADIC)
 depends=(fcitx5 pipewire gcc-libs)
 makedepends=(cargo clang cmake extra-cmake-modules gettext)
-optdepends=('curl: parakeetd-download-models fetches the speech models')
+optdepends=('curl: voice-jad-download-models fetches the speech models')
+provides=(fcitx5-parakeet)
+conflicts=(fcitx5-parakeet)
+replaces=(fcitx5-parakeet)
 install=$pkgname.install
 # makepkg's -flto turns ring's C objects (built for lindera's IPADIC download)
 # into GCC bitcode that rust-lld cannot link.
@@ -40,22 +43,22 @@ build() {
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   # ggml turns every SIMD option off when SOURCE_DATE_EPOCH is set, which
-  # makepkg always does; parakeetd checks for these at start-up.
+  # makepkg always does; voice-jad checks for these at start-up.
   export GGML_SSE42=ON GGML_AVX=ON GGML_AVX2=ON GGML_BMI2=ON GGML_FMA=ON GGML_F16C=ON
   SHERPA_ONNX_LIB_DIR="$srcdir/$_sherpa_archive/lib" \
-  SHERPA_ONNX_RPATH=/usr/lib/parakeetd \
+  SHERPA_ONNX_RPATH=/usr/lib/voice-jad \
     cargo build --manifest-path daemon/Cargo.toml --release --frozen
 }
 
 package() {
   cd "$pkgname-$pkgver"
   DESTDIR="$pkgdir" cmake --install build
-  install -Dm755 target/release/parakeetd "$pkgdir/usr/bin/parakeetd"
-  install -Dm755 target/release/parakeet-ctl "$pkgdir/usr/bin/parakeet-ctl"
-  install -Dm755 scripts/download-models.sh "$pkgdir/usr/bin/parakeetd-download-models"
-  install -Dm755 scripts/capslock-menu.sh "$pkgdir/usr/bin/parakeet-capslock-menu"
-  install -Dm755 -t "$pkgdir/usr/lib/parakeetd" "$srcdir/$_sherpa_archive/lib/"*.so
-  install -Dm644 -t "$pkgdir/usr/lib/systemd/user" systemd/parakeetd.service systemd/parakeetd.socket
+  install -Dm755 target/release/voice-jad "$pkgdir/usr/bin/voice-jad"
+  install -Dm755 target/release/voice-ja-ctl "$pkgdir/usr/bin/voice-ja-ctl"
+  install -Dm755 scripts/download-models.sh "$pkgdir/usr/bin/voice-jad-download-models"
+  install -Dm755 scripts/capslock-menu.sh "$pkgdir/usr/bin/voice-ja-capslock-menu"
+  install -Dm755 -t "$pkgdir/usr/lib/voice-jad" "$srcdir/$_sherpa_archive/lib/"*.so
+  install -Dm644 -t "$pkgdir/usr/lib/systemd/user" systemd/voice-jad.service systemd/voice-jad.socket
   install -Dm644 daemon/config.example.toml "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
   install -Dm644 THIRD_PARTY_NOTICES.md "$pkgdir/usr/share/doc/$pkgname/THIRD_PARTY_NOTICES.md"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"

@@ -4,9 +4,9 @@
 export DH_VERBOSE = 1
 export CARGO_HOME = $(CURDIR)/debian/cargo-home
 export SHERPA_ONNX_LIB_DIR = $(SHERPA_ONNX_DIR)/lib
-export SHERPA_ONNX_RPATH = /usr/lib/parakeetd
+export SHERPA_ONNX_RPATH = /usr/lib/voice-jad
 # ggml turns every SIMD option off when SOURCE_DATE_EPOCH is set, which
-# dpkg-buildpackage always does; parakeetd checks for these at start-up.
+# dpkg-buildpackage always does; voice-jad checks for these at start-up.
 export GGML_SSE42 = ON
 export GGML_AVX = ON
 export GGML_AVX2 = ON
@@ -14,7 +14,7 @@ export GGML_BMI2 = ON
 export GGML_FMA = ON
 export GGML_F16C = ON
 
-PKG = fcitx5-parakeet
+PKG = fcitx5-voice-ja
 DEST = $(CURDIR)/debian/$(PKG)
 
 %:
@@ -38,8 +38,8 @@ override_dh_auto_test:
 override_dh_auto_clean:
 	rm -rf fcitx-build daemon/target debian/cargo-home
 
-# The prebuilt sherpa-onnx/onnxruntime libraries are private to parakeetd.
+# The prebuilt sherpa-onnx/onnxruntime libraries are private to voice-jad.
 override_dh_shlibdeps:
-	dh_shlibdeps -- -l$(DEST)/usr/lib/parakeetd
+	dh_shlibdeps -- -l$(DEST)/usr/lib/voice-jad
 
 override_dh_dwz:

@@ -1,5 +1,5 @@
-//! Daemon configuration: `$XDG_CONFIG_HOME/parakeetd/config.toml` (or
-//! `$PARAKEETD_CONFIG`). Every key is optional; defaults run the two Parakeet
+//! Daemon configuration: `$XDG_CONFIG_HOME/voice-jad/config.toml` (or
+//! `$VOICE_JAD_CONFIG`). Every key is optional; defaults run the two Parakeet
 //! models that `scripts/download-models.sh` installs.
 
 use std::collections::BTreeMap;
@@ -28,20 +28,20 @@ fn home() -> PathBuf {
 }
 
 pub fn default_socket_path() -> PathBuf {
-    xdg_dir("XDG_RUNTIME_DIR", ".cache").join("parakeetd.sock")
+    xdg_dir("XDG_RUNTIME_DIR", ".cache").join("voice-jad.sock")
 }
 
 pub fn default_models_dir() -> PathBuf {
     xdg_dir("XDG_DATA_HOME", ".local/share")
-        .join("parakeetd")
+        .join("voice-jad")
         .join("models")
 }
 
 pub fn config_path() -> PathBuf {
-    match std::env::var_os("PARAKEETD_CONFIG") {
+    match std::env::var_os("VOICE_JAD_CONFIG") {
         Some(v) if !v.is_empty() => PathBuf::from(v),
         _ => xdg_dir("XDG_CONFIG_HOME", ".config")
-            .join("parakeetd")
+            .join("voice-jad")
             .join("config.toml"),
     }
 }
@@ -336,7 +336,7 @@ mod tests {
     fn config_overrides_parse() {
         let raw: Raw = toml::from_str(
             r#"
-            target = "parakeet_src"
+            target = "voiceja_src"
             max_seconds = 30
             vad_model = ""
             [models.ja]
@@ -347,7 +347,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        assert_eq!(raw.target.as_deref(), Some("parakeet_src"));
+        assert_eq!(raw.target.as_deref(), Some("voiceja_src"));
         assert_eq!(raw.models["ja"].num_threads, Some(2));
         assert_eq!(raw.auto.threshold, Some(-0.5));
         assert!(matches!(&raw.vad_model, Some(toml::Value::String(s)) if s.is_empty()));
@@ -355,7 +355,7 @@ mod tests {
 
     /// Loads `toml` from a scratch file; `{model}` expands to an existing file.
     fn load_with_model(name: &str, toml: &str) -> Config {
-        let dir = std::env::temp_dir().join(format!("parakeetd-{}-{name}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("voice-jad-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let model = dir.join("model.gguf");
         std::fs::write(&model, b"").unwrap();

@@ -10,7 +10,7 @@ A tap (shorter than TapThresholdMs) locks the recording on, so this script
 always holds the trigger for --hold seconds and does not exercise tap-to-lock.
 
     python3 scripts/fcitx5-smoke.py --hold 1                              # silence -> no commit
-    python3 scripts/fcitx5-smoke.py --wav en.wav --sink parakeet_test --hold 5
+    python3 scripts/fcitx5-smoke.py --wav en.wav --sink voiceja_test --hold 5
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def main() -> int:
         "/org/freedesktop/portal/inputmethod",
         "org.fcitx.Fcitx.InputMethod1",
         "CreateInputContext",
-        GLib.Variant("(a(ss))", [[("program", "fcitx5-parakeet-smoke")]]),
+        GLib.Variant("(a(ss))", [[("program", "fcitx5-voice-ja-smoke")]]),
     ).unpack()
     print(f"input context: {path}", file=sys.stderr)
 

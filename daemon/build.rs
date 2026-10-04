@@ -3,10 +3,10 @@
 //!
 //! Environment:
 //!   SHERPA_ONNX_LIB_DIR  directory holding libsherpa-onnx-c-api.so (+ onnxruntime)
-//!                        at link time. Default: /usr/lib/parakeetd
+//!                        at link time. Default: /usr/lib/voice-jad
 //!   SHERPA_ONNX_RPATH    directory baked into the binary for runtime lookup.
 //!                        Default: same as SHERPA_ONNX_LIB_DIR (packaging sets
-//!                        /usr/lib/parakeetd while linking from $srcdir).
+//!                        /usr/lib/voice-jad while linking from $srcdir).
 
 use std::env;
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=SHERPA_ONNX_LIB_DIR");
     println!("cargo:rerun-if-env-changed=SHERPA_ONNX_RPATH");
 
-    let lib_dir = env::var("SHERPA_ONNX_LIB_DIR").unwrap_or_else(|_| "/usr/lib/parakeetd".into());
+    let lib_dir = env::var("SHERPA_ONNX_LIB_DIR").unwrap_or_else(|_| "/usr/lib/voice-jad".into());
     let rpath = env::var("SHERPA_ONNX_RPATH").unwrap_or_else(|_| lib_dir.clone());
     println!("cargo:rustc-link-search=native={lib_dir}");
     println!("cargo:rustc-link-lib=dylib=sherpa-onnx-c-api");

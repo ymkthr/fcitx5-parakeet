@@ -1,0 +1,11 @@
+[Unit]
+Description=fcitx5-voice-ja speech-to-text daemon (sherpa-onnx)
+Requires=voice-jad.socket
+After=voice-jad.socket pipewire.service
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/voice-jad
+Restart=on-failure
+RestartSec=2
+Nice=5
