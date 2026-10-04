@@ -25,8 +25,6 @@ use std::sync::LazyLock;
 use std::time::Instant;
 
 use anyhow::{anyhow, bail, Context, Result};
-use lindera::dictionary::load_dictionary;
-use lindera::mode::Mode;
 use lindera::segmenter::Segmenter;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::LlamaContext;
@@ -96,7 +94,7 @@ pub fn cpu_supported() -> bool {
 struct Loaded {
     jinen: LlamaModel,
     judge: LlamaModel,
-    segmenter: Segmenter,
+    segmenter: &'static Segmenter,
 }
 
 /// Lazily loaded; the mutex also serialises corrections, which each use all
@@ -135,7 +133,7 @@ impl Corrector {
     /// as context.
     fn correct_chunks(&self, loaded: &Loaded, asr: &str, context: &str) -> Result<String> {
         let mut out = String::with_capacity(asr.len());
-        for chunk in chunks(&loaded.segmenter, asr, CHUNK_CHARS)? {
+        for chunk in chunks(loaded.segmenter, asr, CHUNK_CHARS)? {
             let fixed = if norm(chunk).chars().count() > MAX_CHUNK_CHARS {
                 None
             } else {
@@ -151,12 +149,10 @@ impl Corrector {
         let mut guard = self.loaded.lock();
         if guard.is_none() {
             let started = Instant::now();
-            let dictionary =
-                load_dictionary("embedded://ipadic").map_err(|e| anyhow!("ipadic: {e}"))?;
             *guard = Some(Loaded {
                 jinen: load_model(&self.cfg.model)?,
                 judge: load_model(&self.cfg.judge_model)?,
-                segmenter: Segmenter::new(Mode::Normal, dictionary, None),
+                segmenter: crate::punct::segmenter()?,
             });
             info!(
                 "loaded correction models {} and {} in {:.1}s",
@@ -222,7 +218,7 @@ impl Corrector {
     fn convert(&self, loaded: &Loaded, chunk: &str, before: &str) -> Result<Option<String>> {
         let model = &loaded.jinen;
         let vocab = model.vocab();
-        let prompt = prompt(&reading(&loaded.segmenter, chunk)?, before);
+        let prompt = prompt(&reading(loaded.segmenter, chunk)?, before);
         let prompt_tokens = vocab.tokenize(prompt.as_bytes(), true, true);
         let mut ctx = self.context(model, prompt_tokens.len() + MAX_OUTPUT_TOKENS)?;
         let mut batch = LlamaBatch::new(BATCH_TOKENS, 1);
@@ -573,9 +569,8 @@ fn norm(s: &str) -> String {
 mod tests {
     use super::*;
 
-    fn segmenter() -> Segmenter {
-        let dictionary = load_dictionary("embedded://ipadic").unwrap();
-        Segmenter::new(Mode::Normal, dictionary, None)
+    fn segmenter() -> &'static Segmenter {
+        crate::punct::segmenter().unwrap()
     }
 
     #[test]

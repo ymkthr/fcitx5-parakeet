@@ -340,11 +340,11 @@ pub fn sanitize(text: &str) -> String {
 /// Outcome of the `auto` decision.
 pub struct AutoResult {
     pub lang: String,
-    pub text: String,
+    pub transcript: Transcript,
 }
 
 /// Detector wins when it emitted text and is confident; otherwise fallback.
-pub fn decide_auto(cfg: &Config, detected: &Transcript, fallback: &Transcript) -> AutoResult {
+pub fn decide_auto(cfg: &Config, detected: Transcript, fallback: Transcript) -> AutoResult {
     let auto = &cfg.auto;
     debug!(
         "{AUTO_LANG}: {}={:.3} {:?} | {} {:?}",
@@ -361,12 +361,12 @@ pub fn decide_auto(cfg: &Config, detected: &Transcript, fallback: &Transcript) -
     if !detected.text.is_empty() && confident {
         AutoResult {
             lang: auto.detector.clone(),
-            text: detected.text.clone(),
+            transcript: detected,
         }
     } else {
         AutoResult {
             lang: auto.fallback.clone(),
-            text: fallback.text.clone(),
+            transcript: fallback,
         }
     }
 }
@@ -384,6 +384,7 @@ mod tests {
         Transcript {
             text: text.into(),
             confidence,
+            tokens: Vec::new(),
         }
     }
 
@@ -391,10 +392,10 @@ mod tests {
     fn confident_english_wins() {
         let r = decide_auto(
             &cfg(),
-            &t("Hello there.", Some(-0.02)),
-            &t("ハローゼア", None),
+            t("Hello there.", Some(-0.02)),
+            t("ハローゼア", None),
         );
-        assert_eq!((r.lang.as_str(), r.text.as_str()), ("en", "Hello there."));
+        assert_eq!((r.lang.as_str(), r.transcript.text.as_str()), ("en", "Hello there."));
     }
 
     #[test]
@@ -402,18 +403,18 @@ mod tests {
         let c = cfg();
         let r = decide_auto(
             &c,
-            &t("Witchnut jökkä", Some(-0.78)),
-            &t("うちの中学は", None),
+            t("Witchnut jökkä", Some(-0.78)),
+            t("うちの中学は", None),
         );
         assert_eq!(r.lang, "ja");
-        let r = decide_auto(&c, &t("", None), &t("はい", None));
-        assert_eq!((r.lang.as_str(), r.text.as_str()), ("ja", "はい"));
+        let r = decide_auto(&c, t("", None), t("はい", None));
+        assert_eq!((r.lang.as_str(), r.transcript.text.as_str()), ("ja", "はい"));
     }
 
     #[test]
     fn threshold_is_inclusive() {
         let c = cfg();
-        let r = decide_auto(&c, &t("ok", Some(c.auto.threshold)), &t("おけ", None));
+        let r = decide_auto(&c, t("ok", Some(c.auto.threshold)), t("おけ", None));
         assert_eq!(r.lang, "en");
     }
 
