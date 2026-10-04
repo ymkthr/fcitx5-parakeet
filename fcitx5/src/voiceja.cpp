@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: MIT
  */
-#include "parakeet.h"
+#include "voiceja.h"
 
 #include <algorithm>
 #include <utility>
@@ -20,21 +20,21 @@ namespace fcitx {
 
 namespace {
 
-FCITX_DEFINE_LOG_CATEGORY(parakeet_log, "parakeet");
-#define PK_DEBUG() FCITX_LOGC(parakeet_log, Debug)
-#define PK_WARN() FCITX_LOGC(parakeet_log, Warn)
+FCITX_DEFINE_LOG_CATEGORY(voiceja_log, "voiceja");
+#define PK_DEBUG() FCITX_LOGC(voiceja_log, Debug)
+#define PK_WARN() FCITX_LOGC(voiceja_log, Warn)
 
-constexpr const char *kConfigFile = "conf/parakeet.conf";
+constexpr const char *kConfigFile = "conf/voiceja.conf";
 constexpr uint64_t kUsec = 1000 * 1000;
 constexpr uint64_t kFailStatusUsec = 2500 * 1000;
-// parakeetd answers START once samples flow (RECORDER_START_TIMEOUT = 3 s).
+// voice-jad answers START once samples flow (RECORDER_START_TIMEOUT = 3 s).
 constexpr uint64_t kStartTimeoutUsec = 10 * kUsec;
 // With commit_after_seconds the final decode covers at most about a minute of
 // audio; the margin is for a CPU saturated by other work. A later reply still
 // commits.
 constexpr uint64_t kStopTimeoutUsec = 300 * kUsec;
 constexpr uint64_t kCancelTimeoutUsec = 5 * kUsec;
-// Context length the jinen-v2 model card uses; parakeetd truncates to the same.
+// Context length the jinen-v2 model card uses; voice-jad truncates to the same.
 constexpr size_t kContextChars = 64;
 // Keeps the live transcript to one short line near the cursor.
 constexpr size_t kPartialChars = 40;
@@ -58,7 +58,7 @@ bool needsLeadingSpace(InputContext *ic) {
     return before != ' ' && before != '\n' && before != '\t';
 }
 
-/// Text before the cursor, sent with START and STOP so parakeetd can pick
+/// Text before the cursor, sent with START and STOP so voice-jad can pick
 /// homophones that fit what is already written. Kept on one protocol line.
 std::string contextBeforeCursor(InputContext *ic) {
     if (!ic->capabilityFlags().test(CapabilityFlag::SurroundingText)) {
@@ -107,11 +107,11 @@ std::string withPartial(std::string cue, const std::string &partial) {
 
 } // namespace
 
-ParakeetModule::ParakeetModule(Instance *instance)
-    : instance_(instance), factory_([](InputContext &) { return new ParakeetState; }) {
-    registerDomain("fcitx5-parakeet", FCITX_INSTALL_LOCALEDIR);
-    instance_->inputContextManager().registerProperty("parakeetState", &factory_);
-    client_ = std::make_unique<ParakeetClient>(instance_->eventLoop(), defaultParakeetSocketPath());
+VoiceJaModule::VoiceJaModule(Instance *instance)
+    : instance_(instance), factory_([](InputContext &) { return new VoiceJaState; }) {
+    registerDomain("fcitx5-voice-ja", FCITX_INSTALL_LOCALEDIR);
+    instance_->inputContextManager().registerProperty("voiceJaState", &factory_);
+    client_ = std::make_unique<VoiceJaClient>(instance_->eventLoop(), defaultVoiceJaSocketPath());
     reloadConfig();
 
     watchers_.emplace_back(
@@ -148,23 +148,23 @@ ParakeetModule::ParakeetModule(Instance *instance)
         }));
 }
 
-void ParakeetModule::applyConfig() {
+void VoiceJaModule::applyConfig() {
     const std::string &path = *config_.socketPath;
-    client_->setSocketPath(path.empty() ? defaultParakeetSocketPath() : path);
+    client_->setSocketPath(path.empty() ? defaultVoiceJaSocketPath() : path);
 }
 
-void ParakeetModule::setConfig(const RawConfig &raw) {
+void VoiceJaModule::setConfig(const RawConfig &raw) {
     config_.load(raw, true);
     safeSaveAsIni(config_, kConfigFile);
     applyConfig();
 }
 
-void ParakeetModule::reloadConfig() {
+void VoiceJaModule::reloadConfig() {
     readAsIni(config_, kConfigFile);
     applyConfig();
 }
 
-bool ParakeetModule::isTriggerRelease(const Key &key) const {
+bool VoiceJaModule::isTriggerRelease(const Key &key) const {
     // Modifiers may be released before the main key (Super+space -> space),
     // so the release only has to match the key symbol.
     return std::any_of(config_.triggerKey->begin(), config_.triggerKey->end(), [&](const Key &trigger) {
@@ -173,7 +173,7 @@ bool ParakeetModule::isTriggerRelease(const Key &key) const {
     });
 }
 
-void ParakeetModule::onKeyEvent(KeyEvent &event) {
+void VoiceJaModule::onKeyEvent(KeyEvent &event) {
     auto *ic = event.inputContext();
     auto *state = ic->propertyFor(&factory_);
     const Key key = event.key();
@@ -233,7 +233,7 @@ void ParakeetModule::onKeyEvent(KeyEvent &event) {
     }
 }
 
-void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
+void VoiceJaModule::startRecording(InputContext *ic, VoiceJaState *state) {
     state->recording = true;
     state->live = false;
     state->locked = false;
@@ -303,11 +303,11 @@ void ParakeetModule::startRecording(InputContext *ic, ParakeetState *state) {
         });
     if (state->startRequest == 0) {
         state->recording = false;
-        failStatus(ic, _("parakeetd is not running"));
+        failStatus(ic, _("voice-jad is not running"));
     }
 }
 
-void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
+void VoiceJaModule::stopRecording(InputContext *ic, VoiceJaState *state) {
     state->recording = false;
     ++state->pendingResults;
     updateStatus(ic, state);
@@ -340,14 +340,14 @@ void ParakeetModule::stopRecording(InputContext *ic, ParakeetState *state) {
             updateStatus(ic, state);
             deliver(ic, state, payload);
         },
-        kStopTimeoutUsec, {}, [] { PK_WARN() << "parakeetd has not answered STOP yet; still waiting"; });
+        kStopTimeoutUsec, {}, [] { PK_WARN() << "voice-jad has not answered STOP yet; still waiting"; });
     if (sent == 0) {
         state->pendingResults = std::max(0, state->pendingResults - 1);
-        failStatus(ic, _("parakeetd is not running"));
+        failStatus(ic, _("voice-jad is not running"));
     }
 }
 
-void ParakeetModule::cancelRecording(InputContext *ic, ParakeetState *state) {
+void VoiceJaModule::cancelRecording(InputContext *ic, VoiceJaState *state) {
     state->recording = false;
     ++state->session;
     client_->unsubscribe(state->startRequest);
@@ -365,7 +365,7 @@ void ParakeetModule::cancelRecording(InputContext *ic, ParakeetState *state) {
 
 /// Commits a "<lang> <text>" transcript, or holds it on an unfocused input
 /// context, where the frontend may drop or misdirect a commit.
-void ParakeetModule::deliver(InputContext *ic, ParakeetState *state, const std::string &payload) {
+void VoiceJaModule::deliver(InputContext *ic, VoiceJaState *state, const std::string &payload) {
     const size_t space = payload.find(' ');
     if (space == std::string::npos || space + 1 == payload.size()) {
         return;
@@ -388,14 +388,14 @@ void ParakeetModule::deliver(InputContext *ic, ParakeetState *state, const std::
     ic->commitString(text);
 }
 
-void ParakeetModule::showAux(InputContext *ic, const std::string &text) {
+void VoiceJaModule::showAux(InputContext *ic, const std::string &text) {
     // Only the aux line is ours; the active input method owns the rest of
     // the panel (preedit, candidates), so it is left untouched.
     ic->inputPanel().setAuxUp(Text(text));
     ic->updateUserInterface(UserInterfaceComponent::InputPanel);
 }
 
-void ParakeetModule::updateStatus(InputContext *ic, const ParakeetState *state) {
+void VoiceJaModule::updateStatus(InputContext *ic, const VoiceJaState *state) {
     if (!*config_.showStatus) {
         showAux(ic, {});
         return;
@@ -409,9 +409,9 @@ void ParakeetModule::updateStatus(InputContext *ic, const ParakeetState *state) 
     }
 }
 
-void ParakeetModule::failStatus(InputContext *ic, const std::string &message) {
+void VoiceJaModule::failStatus(InputContext *ic, const std::string &message) {
     PK_WARN() << message;
-    showAux(ic, std::string(_("Parakeet: ")) + message);
+    showAux(ic, std::string(_("Voice input: ")) + message);
     auto ref = ic->watch();
     failTimer_ = instance_->eventLoop().addTimeEvent(CLOCK_MONOTONIC, now(CLOCK_MONOTONIC) + kFailStatusUsec,
                                                      0, [this, ref](EventSourceTime *source, uint64_t) {
@@ -425,4 +425,4 @@ void ParakeetModule::failStatus(InputContext *ic, const std::string &message) {
 
 } // namespace fcitx
 
-FCITX_ADDON_FACTORY_V2(parakeet, fcitx::ParakeetModuleFactory);
+FCITX_ADDON_FACTORY_V2(voiceja, fcitx::VoiceJaModuleFactory);

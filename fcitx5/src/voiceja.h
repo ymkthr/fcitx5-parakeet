@@ -1,14 +1,14 @@
 /*
  * SPDX-License-Identifier: MIT
  *
- * fcitx5 module that dictates through parakeetd from any input method.
+ * fcitx5 module that dictates through voice-jad from any input method.
  *
  * The module watches key events ahead of the active input method and claims
  * only the trigger/cancel keys, so the user keeps their keyboard input method
  * (and can edit the transcript right away) while dictating.
  */
-#ifndef FCITX5_PARAKEET_PARAKEET_H
-#define FCITX5_PARAKEET_PARAKEET_H
+#ifndef FCITX5_VOICE_JA_VOICEJA_H
+#define FCITX5_VOICE_JA_VOICEJA_H
 
 #include <chrono>
 #include <cstdint>
@@ -34,7 +34,7 @@
 namespace fcitx {
 
 FCITX_CONFIGURATION(
-    ParakeetConfig, KeyListOption triggerKey{this,
+    VoiceJaConfig, KeyListOption triggerKey{this,
                                              "TriggerKey",
                                              _("Trigger key"),
                                              {Key("Menu")},
@@ -48,12 +48,12 @@ FCITX_CONFIGURATION(
         this, "TapThresholdMs",
         _("Tap threshold (ms): a shorter press locks the recording, a longer press records while held"), 250,
         IntConstrain(0, 2000)};
-    Option<std::string> language{this, "Language", _("Language sent to parakeetd (auto, ja or en)"), "auto"};
+    Option<std::string> language{this, "Language", _("Language sent to voice-jad (auto, ja or en)"), "auto"};
     Option<std::string> socketPath{this, "SocketPath",
-                                   _("parakeetd socket (empty: $XDG_RUNTIME_DIR/parakeetd.sock)"), ""};
+                                   _("voice-jad socket (empty: $XDG_RUNTIME_DIR/voice-jad.sock)"), ""};
     Option<bool> showStatus{this, "ShowStatus", _("Show recording status near the cursor"), true};);
 
-struct ParakeetState : public InputContextProperty {
+struct VoiceJaState : public InputContextProperty {
     // The trigger is held down (independent of whether the daemon accepted
     // the capture).
     bool armed = false;
@@ -79,9 +79,9 @@ struct ParakeetState : public InputContextProperty {
     std::chrono::steady_clock::time_point pressedAt;
 };
 
-class ParakeetModule final : public AddonInstance {
+class VoiceJaModule final : public AddonInstance {
   public:
-    explicit ParakeetModule(Instance *instance);
+    explicit VoiceJaModule(Instance *instance);
 
     const Configuration *getConfig() const override { return &config_; }
     void setConfig(const RawConfig &raw) override;
@@ -92,29 +92,29 @@ class ParakeetModule final : public AddonInstance {
     void onKeyEvent(KeyEvent &event);
     bool isTriggerRelease(const Key &key) const;
 
-    void startRecording(InputContext *ic, ParakeetState *state);
-    void stopRecording(InputContext *ic, ParakeetState *state);
-    void cancelRecording(InputContext *ic, ParakeetState *state);
+    void startRecording(InputContext *ic, VoiceJaState *state);
+    void stopRecording(InputContext *ic, VoiceJaState *state);
+    void cancelRecording(InputContext *ic, VoiceJaState *state);
 
-    void deliver(InputContext *ic, ParakeetState *state, const std::string &payload);
+    void deliver(InputContext *ic, VoiceJaState *state, const std::string &payload);
 
-    void updateStatus(InputContext *ic, const ParakeetState *state);
+    void updateStatus(InputContext *ic, const VoiceJaState *state);
     void failStatus(InputContext *ic, const std::string &message);
     void showAux(InputContext *ic, const std::string &text);
 
     Instance *instance_;
-    ParakeetConfig config_;
-    FactoryFor<ParakeetState> factory_;
-    std::unique_ptr<ParakeetClient> client_;
+    VoiceJaConfig config_;
+    FactoryFor<VoiceJaState> factory_;
+    std::unique_ptr<VoiceJaClient> client_;
     std::unique_ptr<EventSourceTime> failTimer_;
     std::vector<std::unique_ptr<HandlerTableEntry<EventHandler>>> watchers_;
 };
 
-class ParakeetModuleFactory : public AddonFactory {
+class VoiceJaModuleFactory : public AddonFactory {
   public:
-    AddonInstance *create(AddonManager *manager) override { return new ParakeetModule(manager->instance()); }
+    AddonInstance *create(AddonManager *manager) override { return new VoiceJaModule(manager->instance()); }
 };
 
 } // namespace fcitx
 
-#endif // FCITX5_PARAKEET_PARAKEET_H
+#endif // FCITX5_VOICE_JA_VOICEJA_H

@@ -11,7 +11,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PKG=fcitx5-parakeet
+PKG=fcitx5-voice-ja
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/daemon/Cargo.toml" | head -n1)"
 SHERPA_VERSION=1.13.7
 SHERPA_ARCHIVE="sherpa-onnx-v${SHERPA_VERSION}-linux-x64-shared-no-tts"

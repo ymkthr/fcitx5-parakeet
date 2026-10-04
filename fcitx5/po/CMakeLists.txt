@@ -1,1 +1,1 @@
-fcitx5_install_translation(fcitx5-parakeet)
+fcitx5_install_translation(fcitx5-voice-ja)

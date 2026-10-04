@@ -1,4 +1,4 @@
-# fcitx5-parakeet
+# fcitx5-voice-ja
 
 [日本語](README.md) | [English](README.en.md)
 
@@ -13,16 +13,16 @@ Arch Linuxのほか、Debian/Ubuntu（`.deb`）とFedora（`.rpm`）向けのパ
 ### AURから
 
 ```sh
-paru -S fcitx5-parakeet   # または yay -S fcitx5-parakeet
+paru -S fcitx5-voice-ja   # または yay -S fcitx5-voice-ja
 ```
 
 パッケージにはモデルが含まれません。インストール後に、デスクトップのユーザーとして次を実行してください。
 
 ```sh
-parakeetd-download-models
-systemctl --user enable --now parakeetd.socket
+voice-jad-download-models
+systemctl --user enable --now voice-jad.socket
 busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
-parakeet-capslock-menu apply   # GNOMEでCapsLockをMenuキーにする場合
+voice-ja-capslock-menu apply   # GNOMEでCapsLockをMenuキーにする場合
 ```
 
 ### debまたはrpmから
@@ -32,8 +32,8 @@ Debian/UbuntuとFedoraでは、dockerまたはpodmanのあるマシンでパッ�
 ```sh
 packaging/build.sh deb    # packaging/dist/ に .deb ができる（既定はdebian:trixie）
 packaging/build.sh rpm    # packaging/dist/ に .rpm ができる（既定はfedora:42）
-sudo apt install ./packaging/dist/fcitx5-parakeet_*.deb
-sudo dnf install ./packaging/dist/fcitx5-parakeet-*.rpm
+sudo apt install ./packaging/dist/fcitx5-voice-ja_*.deb
+sudo dnf install ./packaging/dist/fcitx5-voice-ja-*.rpm
 ```
 
 インストール後の手順はAURと同じです。詳細は`packaging/README.md`を参照してください。
@@ -48,24 +48,40 @@ sudo dnf install ./packaging/dist/fcitx5-parakeet-*.rpm
 
 このスクリプトは次の処理を行います。
 
-1. Rust製デーモンとfcitx5アドオンをビルドしてインストールする。
-2. 日本語モデル、英語モデル、Silero VADモデル、同音異義語補正に使うかな漢字変換モデルjinen-v2-smallと言語モデルTinySwallow-1.5Bをダウンロードする。
-3. ユーザー用systemd socketを有効にする。
-4. fcitx5が動作していれば再起動して、新しいモジュールを読み込む。
-5. GNOMEでは、CapsLockをMenuキーとして扱うXKBオプション`caps:menu`を追加する。
+1. 旧名のfcitx5-parakeetが入っていれば、アンインストールして設定とモデルを新しい場所へ移す。
+2. Rust製デーモンとfcitx5アドオンをビルドしてインストールする。
+3. 日本語モデル、英語モデル、Silero VADモデル、同音異義語補正に使うかな漢字変換モデルjinen-v2-smallと言語モデルTinySwallow-1.5Bをダウンロードする。
+4. ユーザー用systemd socketを有効にする。
+5. fcitx5が動作していれば再起動して、新しいモジュールを読み込む。
+6. GNOMEでは、CapsLockをMenuキーとして扱うXKBオプション`caps:menu`を追加する。
 
 ビルドには`base-devel`、`cargo`、`clang`、`cmake`、`extra-cmake-modules`、`gettext`が必要です。
 不足しているパッケージは`makepkg`がインストールを確認します。
-音声認識モデルは`~/.local/share/parakeetd/models/`へ保存されます。
+音声認識モデルは`~/.local/share/voice-jad/models/`へ保存されます。
 
 インストール時にfcitx5が停止していた場合は、手動でfcitx5を起動してください。
 
 インストール後はデーモンとの接続を確認できます。
 
 ```sh
-parakeet-ctl hello
-parakeet-ctl status
+voice-ja-ctl hello
+voice-ja-ctl status
 ```
+
+### fcitx5-parakeetから移行する
+
+このプロジェクトの旧名はfcitx5-parakeetです。`./scripts/install.sh`は移行を自動で行います。
+パッケージで入れ替える場合は、新しいパッケージを入れる前に、デスクトップのユーザーとして次を実行してください。
+
+```sh
+systemctl --user disable --now parakeetd.socket parakeetd.service
+mv ~/.config/parakeetd ~/.config/voice-jad
+mv ~/.local/share/parakeetd ~/.local/share/voice-jad
+mv ~/.config/fcitx5/conf/parakeet.conf ~/.config/fcitx5/conf/voiceja.conf
+```
+
+存在しないものは飛ばしてください。`config.toml`にモデルのパスを書いている場合は、`/parakeetd/`を`/voice-jad/`に直してください。
+環境変数`PARAKEETD_CONFIG`と`PARAKEETD_MODELS_DIR`は、`VOICE_JAD_CONFIG`と`VOICE_JAD_MODELS_DIR`になりました。
 
 ## 使い方
 
@@ -87,7 +103,7 @@ CapsLockをそのまま残す場合は、インストーラーに`--keep-capsloc
 `caps:menu`だけを取り除き、他のオプションは残します。
 
 ```sh
-parakeet-capslock-menu revert
+voice-ja-capslock-menu revert
 ```
 
 GNOME以外の環境では、インストーラーは設定を変更せず手順を表示します。
@@ -157,12 +173,12 @@ KDEの場合はシステム設定からキーボードの設定を開き、キ�
 補正にかかる時間は4スレッドのCPUで、短い発話で約0.1秒、30秒の発話で約1秒、1分の発話で2.4〜3.1秒です。
 長い録音は録音中に途中の無音で区切り、区切った部分から補正するため、録音終了後に待つのは最後の部分の補正だけです（2分半の録音で、録音終了から入力まで補正なしの4.3秒に対して7.1秒）。
 
-モデル（jinen-v2-smallが約80MB、TinySwallow-1.5Bが約940MB）は`parakeetd-download-models`（リポジトリでは`scripts/download-models.sh`）が`~/.local/share/parakeetd/models/`へダウンロードします。
+モデル（jinen-v2-smallが約80MB、TinySwallow-1.5Bが約940MB）は`voice-jad-download-models`（リポジトリでは`scripts/download-models.sh`）が`~/.local/share/voice-jad/models/`へダウンロードします。
 補正を有効にすると、デーモンのメモリ使用量が約1.1GB増えます。
 どちらかのモデルファイルがなければ補正は無効になり、認識結果をそのまま入力します。
 補正にはAVX2、FMA、F16C、BMI2に対応したCPU（Intel Haswell、AMD Excavator以降）が必要で、対応していないCPUでは補正を自動で無効にします。
 
-補正を止めるには、`~/.config/parakeetd/config.toml`に次を書きます。
+補正を止めるには、`~/.config/voice-jad/config.toml`に次を書きます。
 
 ```toml
 [correction]
@@ -175,8 +191,8 @@ enabled = false
 
 ## 設定
 
-`fcitx5-configtool`を開き、アドオン（Addons）から「Parakeet Voice Input」を選ぶと設定できます。
-設定ファイルは`~/.config/fcitx5/conf/parakeet.conf`です。
+`fcitx5-configtool`を開き、アドオン（Addons）から「Japanese Voice Input」を選ぶと設定できます。
+設定ファイルは`~/.config/fcitx5/conf/voiceja.conf`です。
 
 | 項目 | 既定値 | 内容 |
 | --- | --- | --- |
@@ -184,10 +200,10 @@ enabled = false
 | CancelKey | Escape | 録音中に押すと録音を取り消すキー |
 | TapThresholdMs | 250 | この時間より短い押下は録音を維持したままロックし、長い押下は押している間だけ録音する |
 | Language | auto | auto、ja、enのいずれか |
-| SocketPath | 空 | 空の場合は`$XDG_RUNTIME_DIR/parakeetd.sock`を使う |
+| SocketPath | 空 | 空の場合は`$XDG_RUNTIME_DIR/voice-jad.sock`を使う |
 | ShowStatus | True | カーソル付近へ`🎙️`と途中経過、`…`を表示する |
 
-マイクを変更する場合は`~/.config/parakeetd/config.toml`を作成し、PipeWireのソース名を指定します。
+マイクを変更する場合は`~/.config/voice-jad/config.toml`を作成し、PipeWireのソース名を指定します。
 設定例は`daemon/config.example.toml`にあります。
 
 ```toml
@@ -215,18 +231,18 @@ max_recording_seconds = 900
 設定変更後はデーモンを再起動してください。
 
 ```sh
-systemctl --user restart parakeetd.service
+systemctl --user restart voice-jad.service
 ```
 
 ログは次のコマンドで確認できます。
 
 ```sh
-journalctl --user -u parakeetd.service -f
+journalctl --user -u voice-jad.service -f
 ```
 
 ## ライセンス
 
-fcitx5-parakeet本体はMITライセンスです（`LICENSE`）。
+fcitx5-voice-ja本体はMITライセンスです（`LICENSE`）。
 
 パッケージには音声認識ライブラリとして[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)（Apache License 2.0、`LICENSE-APACHE-2.0`）と[ONNX Runtime](https://github.com/microsoft/onnxruntime)（MITライセンス）の共有ライブラリを同梱しています。
 

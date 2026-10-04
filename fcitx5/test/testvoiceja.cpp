@@ -1,8 +1,8 @@
 /*
  * SPDX-License-Identifier: MIT
  *
- * Drives the parakeet module through fcitx5's test frontend against a live
- * parakeetd while the plain keyboard input method is active. Verifies:
+ * Drives the voiceja module through fcitx5's test frontend against a live
+ * voice-jad while the plain keyboard input method is active. Verifies:
  *   1. unrelated keys are not swallowed,
  *   2. holding the trigger dictates: the live transcript shows in the aux
  *      line while held, and the transcript is committed on release,
@@ -11,11 +11,11 @@
  *      input context has focus again.
  *
  * Environment:
- *   PARAKEET_TEST_SOCKET  parakeetd socket (unset -> test skipped, exit 77)
- *   PARAKEET_TEST_WAV     wav played into PARAKEET_TEST_SINK while holding
- *   PARAKEET_TEST_SINK    PipeWire sink whose monitor parakeetd captures
- *   PARAKEET_TEST_EXPECT  exact transcript to require (optional; any commit otherwise)
- *   PARAKEET_TEST_HOLD_SEC seconds to hold the trigger while the wav plays (default 8)
+ *   VOICE_JA_TEST_SOCKET  voice-jad socket (unset -> test skipped, exit 77)
+ *   VOICE_JA_TEST_WAV     wav played into VOICE_JA_TEST_SINK while holding
+ *   VOICE_JA_TEST_SINK    PipeWire sink whose monitor voice-jad captures
+ *   VOICE_JA_TEST_EXPECT  exact transcript to require (optional; any commit otherwise)
+ *   VOICE_JA_TEST_HOLD_SEC seconds to hold the trigger while the wav plays (default 8)
  */
 #include <chrono>
 #include <cstdlib>
@@ -66,27 +66,27 @@ pid_t play(const std::string &sink, const std::string &wav) {
 } // namespace
 
 int main() {
-    const char *socketPath = std::getenv("PARAKEET_TEST_SOCKET");
+    const char *socketPath = std::getenv("VOICE_JA_TEST_SOCKET");
     if (!socketPath) {
-        FCITX_INFO() << "PARAKEET_TEST_SOCKET not set; skipping";
+        FCITX_INFO() << "VOICE_JA_TEST_SOCKET not set; skipping";
         return 77;
     }
-    const std::string wav = envOr("PARAKEET_TEST_WAV", "");
-    const std::string sink = envOr("PARAKEET_TEST_SINK", "");
+    const std::string wav = envOr("VOICE_JA_TEST_WAV", "");
+    const std::string sink = envOr("VOICE_JA_TEST_SINK", "");
     // Exact-match check is optional: ASR output for some clips is not stable
     // across capture offsets, but a played wav must always produce a commit.
-    const std::string expect = envOr("PARAKEET_TEST_EXPECT", "");
+    const std::string expect = envOr("VOICE_JA_TEST_EXPECT", "");
     const bool expectCommit = !wav.empty() && !sink.empty();
-    const auto dictateUsec = static_cast<uint64_t>(std::stod(envOr("PARAKEET_TEST_HOLD_SEC", "8")) * kUsec);
+    const auto dictateUsec = static_cast<uint64_t>(std::stod(envOr("VOICE_JA_TEST_HOLD_SEC", "8")) * kUsec);
 
     setupTestingEnvironment(TESTING_BINARY_DIR, {"src"}, {"test"});
-    char arg0[] = "testparakeet";
+    char arg0[] = "testvoiceja";
     char arg1[] = "--disable=all";
-    char arg2[] = "--enable=testim,testfrontend,keyboard,parakeet";
-    // PARAKEET_TEST_VERBOSE=1 turns on the addon's own log categories.
-    char arg3[] = "--verbose=parakeet=5,parakeet-client=5";
+    char arg2[] = "--enable=testim,testfrontend,keyboard,voiceja";
+    // VOICE_JA_TEST_VERBOSE=1 turns on the addon's own log categories.
+    char arg3[] = "--verbose=voiceja=5,voiceja-client=5";
     char *argv[] = {arg0, arg1, arg2, arg3};
-    const int argc = std::getenv("PARAKEET_TEST_VERBOSE") ? 4 : 3;
+    const int argc = std::getenv("VOICE_JA_TEST_VERBOSE") ? 4 : 3;
     Instance instance(argc, argv);
     instance.addonManager().registerDefaultLoader(nullptr);
 
@@ -170,7 +170,7 @@ int main() {
         press(kTrigger);
         FCITX_ASSERT(testfrontend->call<ITestFrontend::sendKeyEvent>(uuid, kTrigger, false));
         ic->reset();
-        // Nothing is shown until parakeetd confirms samples are flowing.
+        // Nothing is shown until voice-jad confirms samples are flowing.
         FCITX_ASSERT(aux().empty()) << aux();
 
         uint64_t holdUsec = 1 * kUsec;
@@ -207,13 +207,13 @@ int main() {
     dispatcher.schedule([&]() {
         testfrontend = instance.addonManager().addon("testfrontend");
         FCITX_ASSERT(testfrontend);
-        auto *module = instance.addonManager().addon("parakeet", true);
-        FCITX_ASSERT(module) << "parakeet addon did not load";
+        auto *module = instance.addonManager().addon("voiceja", true);
+        FCITX_ASSERT(module) << "voiceja addon did not load";
 
         RawConfig raw;
         raw.setValueByPath("SocketPath", socketPath);
         raw.setValueByPath("TapThresholdMs", "250");
-        raw.setValueByPath("Language", envOr("PARAKEET_TEST_LANG", "auto"));
+        raw.setValueByPath("Language", envOr("VOICE_JA_TEST_LANG", "auto"));
         module->setConfig(raw);
 
         auto group = instance.inputMethodManager().currentGroup();
@@ -245,6 +245,6 @@ int main() {
     if (player > 0) {
         waitpid(player, nullptr, 0);
     }
-    FCITX_INFO() << "testparakeet passed";
+    FCITX_INFO() << "testvoiceja passed";
     return 0;
 }

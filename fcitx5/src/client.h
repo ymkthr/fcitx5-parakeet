@@ -1,11 +1,11 @@
 /*
  * SPDX-License-Identifier: MIT
  *
- * Non-blocking client for the parakeetd Unix-socket line protocol, driven by
+ * Non-blocking client for the voice-jad Unix-socket line protocol, driven by
  * the fcitx5 event loop so the input method never blocks on transcription.
  */
-#ifndef FCITX5_PARAKEET_CLIENT_H
-#define FCITX5_PARAKEET_CLIENT_H
+#ifndef FCITX5_VOICE_JA_CLIENT_H
+#define FCITX5_VOICE_JA_CLIENT_H
 
 #include <cstdint>
 #include <functional>
@@ -19,7 +19,7 @@
 
 namespace fcitx {
 
-class ParakeetClient {
+class VoiceJaClient {
 public:
     /// Called once per request: ok=false carries the ERR message or a
     /// transport failure description.
@@ -27,8 +27,8 @@ public:
     /// Receives each `<id> <EVENT> [payload]` line (PARTIAL, COMMIT, ENDED).
     using Event = std::function<void(const std::string &event, std::string payload)>;
 
-    ParakeetClient(EventLoop &loop, std::string socketPath);
-    ~ParakeetClient();
+    VoiceJaClient(EventLoop &loop, std::string socketPath);
+    ~VoiceJaClient();
 
     void setSocketPath(std::string socketPath);
     const std::string &socketPath() const { return socketPath_; }
@@ -71,9 +71,9 @@ private:
     std::unordered_map<uint64_t, Event> events_;
 };
 
-/// $XDG_RUNTIME_DIR/parakeetd.sock (falls back to /run/user/<uid>).
-std::string defaultParakeetSocketPath();
+/// $XDG_RUNTIME_DIR/voice-jad.sock (falls back to /run/user/<uid>).
+std::string defaultVoiceJaSocketPath();
 
 } // namespace fcitx
 
-#endif // FCITX5_PARAKEET_CLIENT_H
+#endif // FCITX5_VOICE_JA_CLIENT_H

@@ -1,0 +1,28 @@
+post_install() {
+  cat <<'EOF'
+fcitx5-voice-ja: finish the setup as your desktop user (not root):
+
+  1. voice-jad-download-models              # ~1.3 GB into ~/.local/share/voice-jad/models
+  2. systemctl --user enable --now voice-jad.socket
+  3. restart fcitx5, e.g.:
+     busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
+  4. optional: voice-ja-capslock-menu apply  # GNOME: make CapsLock act as the Menu trigger key
+
+Check the connection with: voice-ja-ctl hello
+EOF
+}
+
+post_upgrade() {
+  cat <<'EOF'
+fcitx5-voice-ja: as your desktop user, run
+  systemctl --user try-restart voice-jad.service
+and restart fcitx5 to load the updated module.
+EOF
+}
+
+post_remove() {
+  cat <<'EOF'
+fcitx5-voice-ja: models remain in ~/.local/share/voice-jad/models; remove them by hand.
+Disable the socket with: systemctl --user disable --now voice-jad.socket
+EOF
+}

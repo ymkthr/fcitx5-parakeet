@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetch the sherpa-onnx exports of the Parakeet models parakeetd uses.
+# Fetch the sherpa-onnx exports of the Parakeet models voice-jad uses.
 #   ja: nvidia/parakeet-tdt_ctc-0.6b-ja  (sherpa-onnx-nemo-parakeet-tdt_ctc-0.6b-ja-35000-int8)
 #   en: nvidia/parakeet-tdt-0.6b-v3      (sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8, 25 languages)
 # plus the Silero VAD, and for correcting Japanese homophones the
@@ -7,7 +7,7 @@
 # The v3 model is symlinked from omp's cache when present to avoid a second 640 MB copy.
 set -euo pipefail
 
-MODELS_DIR="${PARAKEETD_MODELS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/parakeetd/models}"
+MODELS_DIR="${VOICE_JAD_MODELS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/voice-jad/models}"
 RELEASE="https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
 JINEN_URL="https://huggingface.co/togatogah/jinen-v2-small.gguf/resolve/main/jinen-v2-small-Q5_K_M.gguf"
 JUDGE_URL="https://huggingface.co/mmnga/TinySwallow-1.5B-gguf/resolve/main/TinySwallow-1.5B-Q4_K_M.gguf"

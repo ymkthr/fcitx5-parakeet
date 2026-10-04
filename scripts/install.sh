@@ -34,6 +34,19 @@ done
 
 step() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
+step "migrate from fcitx5-parakeet"
+if pacman -Q fcitx5-parakeet >/dev/null 2>&1; then
+  systemctl --user disable --now parakeetd.socket parakeetd.service >/dev/null 2>&1 || true
+  sudo pacman -R --noconfirm fcitx5-parakeet
+fi
+move_once() { if [[ -e $1 && ! -e $2 ]]; then mkdir -p "$(dirname "$2")" && mv -v "$1" "$2"; fi; }
+move_once "$HOME/.config/parakeetd" "$HOME/.config/voice-jad"
+move_once "$HOME/.local/share/parakeetd" "$HOME/.local/share/voice-jad"
+move_once "$HOME/.config/fcitx5/conf/parakeet.conf" "$HOME/.config/fcitx5/conf/voiceja.conf"
+if [[ -f $HOME/.config/voice-jad/config.toml ]]; then
+  sed -i 's#/parakeetd/#/voice-jad/#g' "$HOME/.config/voice-jad/config.toml"
+fi
+
 step "native daemon and fcitx5 addon"
 (cd "$ROOT/packaging/arch" && makepkg -sif --noconfirm)
 # Remove files installed by the former Python/uv version. User-unit copies
@@ -42,14 +55,15 @@ if command -v uv >/dev/null 2>&1; then
   uv tool uninstall parakeetd >/dev/null 2>&1 || true
 fi
 rm -f "$HOME/.config/systemd/user/parakeetd.service" "$HOME/.config/systemd/user/parakeetd.socket"
+
 step "models"
 "$ROOT/scripts/download-models.sh"
 
 step "systemd --user socket"
 systemctl --user daemon-reload
-systemctl --user enable --now parakeetd.socket
-systemctl --user try-restart parakeetd.service
-parakeet-ctl hello
+systemctl --user enable --now voice-jad.socket
+systemctl --user try-restart voice-jad.service
+voice-ja-ctl hello
 
 step "restart fcitx5"
 if busctl --user status org.fcitx.Fcitx5 >/dev/null 2>&1; then

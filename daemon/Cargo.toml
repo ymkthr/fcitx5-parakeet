@@ -1,10 +1,10 @@
 [package]
-name = "parakeetd"
-version = "0.3.0"
+name = "voice-jad"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.88"
 license = "MIT"
-description = "Local speech-to-text daemon (sherpa-onnx + NVIDIA Parakeet) used by fcitx5-parakeet"
+description = "Local speech-to-text daemon (sherpa-onnx + NVIDIA Parakeet) used by fcitx5-voice-ja"
 publish = false
 
 [dependencies]

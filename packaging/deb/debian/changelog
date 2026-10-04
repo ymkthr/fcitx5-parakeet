@@ -1,3 +1,9 @@
+fcitx5-voice-ja (0.4.0-1) unstable; urgency=medium
+
+  * Rename fcitx5-parakeet to fcitx5-voice-ja.
+
+ -- ymkthr <ymkthr@users.noreply.github.com>  Sun, 04 Oct 2026 12:00:00 +0900
+
 fcitx5-parakeet (0.3.0-1) unstable; urgency=medium
 
   * Initial Debian packaging.

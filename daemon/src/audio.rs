@@ -177,8 +177,8 @@ fn run_loop(
         *pw::keys::MEDIA_TYPE => "Audio",
         *pw::keys::MEDIA_CATEGORY => "Capture",
         *pw::keys::MEDIA_ROLE => "Communication",
-        *pw::keys::NODE_NAME => "parakeetd",
-        *pw::keys::APP_NAME => "parakeetd",
+        *pw::keys::NODE_NAME => "voice-jad",
+        *pw::keys::APP_NAME => "voice-jad",
         // 20 ms quantum keeps stop latency and buffer churn low.
         *pw::keys::NODE_LATENCY => format!("{}/{}", cfg.sample_rate / 50, cfg.sample_rate),
     };
@@ -187,7 +187,7 @@ fn run_loop(
     }
 
     let stream =
-        pw::stream::StreamRc::new(core.clone(), "parakeetd", props).context("pw_stream_new")?;
+        pw::stream::StreamRc::new(core.clone(), "voice-jad", props).context("pw_stream_new")?;
     let user_data = UserData {
         shared,
         ready: Some(ready),

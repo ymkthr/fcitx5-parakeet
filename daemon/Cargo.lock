@@ -1014,26 +1014,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
-name = "parakeetd"
-version = "0.3.0"
-dependencies = [
- "anyhow",
- "bindgen",
- "env_logger",
- "libc",
- "lindera",
- "llama-cpp-2",
- "log",
- "parking_lot",
- "pipewire",
- "serde",
- "serde_json",
- "tokio",
- "toml",
- "unicode-normalization",
-]
-
-[[package]]
 name = "parking_lot"
 version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1837,6 +1817,26 @@ name = "version-compare"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "03c2856837ef78f57382f06b2b8563a2f512f7185d732608fd9176cb3b8edf0e"
+
+[[package]]
+name = "voice-jad"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "bindgen",
+ "env_logger",
+ "libc",
+ "lindera",
+ "llama-cpp-2",
+ "log",
+ "parking_lot",
+ "pipewire",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "unicode-normalization",
+]
 
 [[package]]
 name = "walkdir"
