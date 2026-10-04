@@ -148,5 +148,5 @@ flowchart LR
 
 ## ライセンス
 
-fcitx5-voice-ja本体はMITライセンスです（`LICENSE`）。
-同梱ライブラリ、ダウンロードするモデル、組み込んだ辞書のライセンスは`THIRD_PARTY_NOTICES.md`を参照してください。
+fcitx5-voice-ja本体はMITライセンスです（[`LICENSE`](LICENSE)）。
+同梱ライブラリ、ダウンロードするモデル、組み込んだ辞書のライセンスは[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)を参照してください。
