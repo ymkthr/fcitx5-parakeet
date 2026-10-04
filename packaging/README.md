@@ -25,8 +25,8 @@ sherpa-onnxのリリースアーカイブは`packaging/cache/`にキャッシュ
 ビルドしたパッケージのインストールは通常どおりです。
 
 ```sh
-sudo apt install ./packaging/dist/fcitx5-voice-ja_0.3.0-1_amd64.deb
-sudo dnf install ./packaging/dist/fcitx5-voice-ja-0.3.0-1.fc42.x86_64.rpm
+sudo apt install ./packaging/dist/fcitx5-voice-ja_0.4.0-1_amd64.deb
+sudo dnf install ./packaging/dist/fcitx5-voice-ja-0.4.0-1.fc42.x86_64.rpm
 ```
 
 インストール後の手順（モデルの取得、socketの有効化、fcitx5の再起動）はAURと同じです。README.mdを参照してください。
@@ -37,7 +37,7 @@ sudo dnf install ./packaging/dist/fcitx5-voice-ja-0.3.0-1.fc42.x86_64.rpm
 2. masterに取り込んだ後、タグを打って送る。
 
    ```sh
-   git tag v0.3.0 && git push origin v0.3.0
+   git tag v0.4.0 && git push origin v0.4.0
    ```
 
 3. `aur/`でチェックサムと`.SRCINFO`を更新し、ビルドを確認する。

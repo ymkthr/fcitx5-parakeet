@@ -1,6 +1,6 @@
 # Local build from the repository: run `makepkg -si` in this directory.
 pkgname=fcitx5-voice-ja
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet"
 arch=(x86_64)

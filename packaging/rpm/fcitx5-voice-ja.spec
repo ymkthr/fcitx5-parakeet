@@ -2,7 +2,7 @@
 %global sherpa_archive sherpa-onnx-v%{sherpa_version}-linux-x64-shared-no-tts
 
 Name:           fcitx5-voice-ja
-Version:        0.3.0
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet
 # MIT: this project, ONNX Runtime and llama.cpp; Apache-2.0: the bundled
@@ -82,5 +82,8 @@ packaging/stage.sh %{buildroot} "$PWD/%{sherpa_archive}/lib" %{_libdir} %{_licen
 %{_userunitdir}/voice-jad.socket
 
 %changelog
+* Sun Oct 04 2026 ymkthr <ymkthr@users.noreply.github.com> - 0.4.0-1
+- Rename fcitx5-parakeet to fcitx5-voice-ja.
+
 * Sun Sep 13 2026 ymkthr <ymkthr@users.noreply.github.com> - 0.3.0-1
 - Initial RPM packaging.
