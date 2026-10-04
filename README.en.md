@@ -146,5 +146,5 @@ flowchart LR
 
 ## License
 
-fcitx5-voice-ja itself is released under the MIT License (`LICENSE`).
-See `THIRD_PARTY_NOTICES.md` for the licenses of the bundled libraries, downloaded models, and embedded dictionary.
+fcitx5-voice-ja itself is released under the MIT License ([`LICENSE`](LICENSE)).
+See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the licenses of the bundled libraries, downloaded models, and embedded dictionary.

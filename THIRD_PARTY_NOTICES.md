@@ -1,6 +1,6 @@
 # Third-party notices
 
-fcitx5-voice-ja itself is released under the MIT License (see `LICENSE`).
+fcitx5-voice-ja itself is released under the MIT License (see [`LICENSE`](LICENSE)).
 The binary package and the models it downloads include or depend on the
 following third-party components.
 
@@ -9,7 +9,7 @@ following third-party components.
 ### sherpa-onnx
 
 - Copyright (c) 2023 Xiaomi Corporation
-- License: Apache License 2.0 (`LICENSE-APACHE-2.0`)
+- License: Apache License 2.0 ([`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0))
 - Source: https://github.com/k2-fsa/sherpa-onnx
 - Files: `/usr/lib/voice-jad/libsherpa-onnx-c-api.so`, `/usr/lib/voice-jad/libsherpa-onnx-cxx-api.so`,
   and the C API header vendored at `daemon/vendor/sherpa-onnx/c-api.h`
@@ -17,24 +17,24 @@ following third-party components.
 ### ONNX Runtime
 
 - Copyright (c) Microsoft Corporation
-- License: MIT License (`licenses/onnxruntime.LICENSE`)
+- License: MIT License ([`licenses/onnxruntime.LICENSE`](licenses/onnxruntime.LICENSE))
 - Source: https://github.com/microsoft/onnxruntime
 - Files: `/usr/lib/voice-jad/libonnxruntime.so` 1.27.1 (bundled in the sherpa-onnx 1.13.7 release archive)
 - The components built into it (protobuf, abseil, re2, Eigen and others) are listed with their
-  licenses in `licenses/onnxruntime-ThirdPartyNotices.txt`, taken from the onnxruntime v1.27.1
+  licenses in [`licenses/onnxruntime-ThirdPartyNotices.txt`](licenses/onnxruntime-ThirdPartyNotices.txt), taken from the onnxruntime v1.27.1
   tag; replace it when a sherpa-onnx upgrade changes the ONNX Runtime version
 
 ### llama.cpp
 
 - Copyright (c) 2023-2026 The ggml authors
-- License: MIT License (`licenses/llama.cpp.LICENSE`)
+- License: MIT License ([`licenses/llama.cpp.LICENSE`](licenses/llama.cpp.LICENSE))
 - Source: https://github.com/ggml-org/llama.cpp
 - Statically linked into `voice-jad` through the `llama-cpp-2` crate; runs the correction models
 
 ### IPADIC (mecab-ipadic 2.7.0)
 
 - Copyright 2000-2003 Nara Institute of Science and Technology
-- License: IPADIC license (`licenses/ipadic.LICENSE`)
+- License: IPADIC license ([`licenses/ipadic.LICENSE`](licenses/ipadic.LICENSE))
 - Source: https://github.com/lindera/lindera (dictionary build of mecab-ipadic-2.7.0-20250920)
 - Embedded in `voice-jad` through the `lindera-ipadic` crate; provides readings for the correction model
 
@@ -44,7 +44,7 @@ The daemon statically links the crates in `daemon/Cargo.lock` that are not
 build-time only. They are available under MIT and/or Apache-2.0, except the
 ICU4X crates (`icu_*`, `zerovec`, `yoke` and friends), which are under
 Unicode-3.0, and `encoding_rs`, which adds BSD-3-Clause for its data.
-`licenses/rust-crates.LICENSE` holds each crate's license text and copyright
+[`licenses/rust-crates.LICENSE`](licenses/rust-crates.LICENSE) holds each crate's license text and copyright
 notice; regenerate it with `scripts/gen-crate-licenses.sh` after `Cargo.lock` changes.
 
 ## Downloaded at install time
@@ -85,7 +85,7 @@ They are not part of the package.
 
 - Copyright Sakana AI and the Swallow team; distilled from Qwen2.5-32B-Instruct into
   Qwen2.5-1.5B-Instruct (both Apache License 2.0)
-- License: Apache License 2.0 (`LICENSE-APACHE-2.0`)
+- License: Apache License 2.0 ([`LICENSE-APACHE-2.0`](LICENSE-APACHE-2.0))
 - Source: https://huggingface.co/SakanaAI/TinySwallow-1.5B, quantized to GGUF by mmnga at
   https://huggingface.co/mmnga/TinySwallow-1.5B-gguf
 - Downloaded as `tinyswallow-1.5b/TinySwallow-1.5B-Q4_K_M.gguf`; judges the homophone
