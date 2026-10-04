@@ -2,13 +2,21 @@
 
 [日本語](README.md) | English
 
-fcitx5-voice-ja provides local voice input for fcitx5 using NVIDIA Parakeet.
-It runs as a module that stays loaded in fcitx5 and starts dictation the moment you press a trigger key.
-It never switches the input method itself.
+Offline Japanese and English voice input for Linux. It uses speech recognition (STT, speech-to-text) to type what you say at the cursor.
+All transcription runs on your own PC, and no audio is sent to the cloud. After a one-time model download, it works without an internet connection.
+
+It runs as an add-on for the fcitx5 input method framework. Press the trigger key in any input field that fcitx5 can type into, and dictation starts right there. Your input method stays as it is.
+
+It supports Arch Linux, Debian, Ubuntu, and Fedora, on GNOME or KDE, under Wayland or X11.
+
+You do not have to speak punctuation. Pauses and the shape of the phrase decide where Japanese commas (、) and periods (。) go.
+Japanese homophone mix-ups such as 機会 and 機械 are reviewed against the text before the cursor, and only clear mistakes are fixed.
+Japanese or English is detected from what you say, so there is nothing to switch.
+While you speak, the text so far appears near the cursor, and long dictations of several minutes are typed in piece by piece as you go.
 
 ## Installation
 
-fcitx5-voice-ja supports Arch Linux and can be packaged for Debian/Ubuntu (`.deb`) and Fedora (`.rpm`). It expects fcitx5 and PipeWire to be running.
+fcitx5 and PipeWire must be running.
 
 ### From the AUR
 
@@ -16,230 +24,127 @@ fcitx5-voice-ja supports Arch Linux and can be packaged for Debian/Ubuntu (`.deb
 paru -S fcitx5-voice-ja   # or: yay -S fcitx5-voice-ja
 ```
 
-The package does not include the models. After installing, run the following as your desktop user:
+### From a deb or rpm
+
+Build the package on a machine with docker or podman, then install it. See `packaging/README.md` for details.
+
+```sh
+packaging/build.sh deb    # defaults to debian:trixie
+packaging/build.sh rpm    # defaults to fedora:42
+sudo apt install ./packaging/dist/fcitx5-voice-ja_*.deb
+sudo dnf install ./packaging/dist/fcitx5-voice-ja-*.rpm
+```
+
+The packages do not include the models. After installing from the AUR, a deb, or an rpm, run the following as your desktop user.
 
 ```sh
 voice-jad-download-models
 systemctl --user enable --now voice-jad.socket
 busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Restart
-voice-ja-capslock-menu apply   # GNOME: make CapsLock act as the Menu key
+voice-ja-capslock-menu apply   # on GNOME, to use CapsLock as the Menu key
 ```
-
-### From a deb or rpm
-
-On Debian/Ubuntu and Fedora, build the package on a machine with docker or podman and install it.
-
-```sh
-packaging/build.sh deb    # writes a .deb to packaging/dist/ (default image: debian:trixie)
-packaging/build.sh rpm    # writes an .rpm to packaging/dist/ (default image: fedora:42)
-sudo apt install ./packaging/dist/fcitx5-voice-ja_*.deb
-sudo dnf install ./packaging/dist/fcitx5-voice-ja-*.rpm
-```
-
-The post-install steps are the same as for the AUR package. See `packaging/README.md` for details.
 
 ### From the repository
 
-Run the installer from the repository root.
-
 ```sh
-./scripts/install.sh
+./scripts/install.sh                   # remaps CapsLock to Menu (GNOME)
+./scripts/install.sh --keep-capslock   # keeps CapsLock as it is
 ```
 
-The installer performs the following steps:
+The script builds the project, downloads the models, enables the systemd socket, and restarts fcitx5.
+The build needs `base-devel`, `cargo`, `clang`, `cmake`, `extra-cmake-modules`, and `gettext`.
+The models are stored in `~/.local/share/voice-jad/models/`.
 
-1. Uninstalls the former fcitx5-parakeet package, if present, and moves its settings and models to the new locations.
-2. Builds and installs the Rust daemon and fcitx5 addon.
-3. Downloads the Japanese, English, and Silero VAD models, and for homophone correction the jinen-v2-small kana-kanji model and the TinySwallow-1.5B language model.
-4. Enables the systemd user socket.
-5. Restarts fcitx5, if it is running, so the new module loads.
-6. On GNOME, adds the XKB option `caps:menu` so CapsLock acts as the Menu key.
-
-The build requires `base-devel`, `cargo`, `clang`, `cmake`, `extra-cmake-modules`, and `gettext`.
-`makepkg` prompts to install missing packages.
-The speech recognition models are stored in `~/.local/share/voice-jad/models/`.
-
-If fcitx5 was not running during installation, start it manually.
-
-Verify the connection to the daemon after installation.
+After installing, check the connection to the daemon.
 
 ```sh
 voice-ja-ctl hello
 voice-ja-ctl status
 ```
 
-### Migrating from fcitx5-parakeet
+## Configuration
 
-This project was formerly named fcitx5-parakeet. `./scripts/install.sh` migrates automatically.
-When switching packages, run the following as your desktop user before installing the new package.
-
-```sh
-systemctl --user disable --now parakeetd.socket parakeetd.service
-mv ~/.config/parakeetd ~/.config/voice-jad
-mv ~/.local/share/parakeetd ~/.local/share/voice-jad
-mv ~/.config/fcitx5/conf/parakeet.conf ~/.config/fcitx5/conf/voiceja.conf
-```
-
-Skip any path that does not exist. If `config.toml` sets model paths, change `/parakeetd/` to `/voice-jad/`.
-The environment variables `PARAKEETD_CONFIG` and `PARAKEETD_MODELS_DIR` are now `VOICE_JAD_CONFIG` and `VOICE_JAD_MODELS_DIR`.
-
-## Usage
+### Trigger key
 
 The default trigger key is `Menu`, and CapsLock is used as the Menu key.
-On Wayland fcitx5 cannot turn the caps-lock state back off, so the desktop remaps the key instead of fcitx5 intercepting it.
+On Wayland fcitx5 cannot turn the CapsLock state back off, so the desktop remaps the key instead.
 
-On GNOME, the installer applies this remap automatically.
-It keeps existing XKB options and appends `caps:menu`; if an option starting with `caps:` is already present, it leaves the settings unchanged to avoid a conflict.
-After the remap, CapsLock no longer locks capital letters.
+| Environment | How to remap |
+| --- | --- |
+| GNOME | The installer adds the XKB option `caps:menu`. Run `voice-ja-capslock-menu revert` to undo it |
+| X11 | `setxkbmap -option caps:menu` (lasts until you log out) |
+| KDE | In System Settings, open Keyboard, then Keyboard Shortcuts, then Caps Lock behavior, and make CapsLock an additional Menu key |
 
-To keep CapsLock as it is, pass `--keep-capslock` to the installer.
-Then dictate with a physical Menu key, or change the trigger key in the configuration.
+If `🎙️` appears near the cursor when you press the trigger key in an input field, the key reaches fcitx5.
 
-```sh
-./scripts/install.sh --keep-capslock
-```
+- A short press starts recording, and a second press stops it and types the text.
+- A long press records while you hold the key and types the text when you release it.
+- Escape during recording discards the part not yet typed.
 
-To undo the remap, run the following command.
-It removes only `caps:menu` and keeps the other options.
+### fcitx5 settings
 
-```sh
-voice-ja-capslock-menu revert
-```
+Open `fcitx5-configtool`, go to Addons, and select "Japanese Voice Input".
+The settings file is `~/.config/fcitx5/conf/voiceja.conf`.
 
-On desktops other than GNOME, the installer changes nothing and prints instructions instead.
-On X11 desktops, run the following command (effective until logout).
+| Key | Default | Description |
+| --- | --- | --- |
+| TriggerKey | Menu | Key that starts and stops recording |
+| CancelKey | Escape | Key that discards the recording |
+| TapThresholdMs | 250 | A shorter press keeps recording on; a longer press records while held |
+| Language | auto | One of auto, ja, en |
+| SocketPath | empty | When empty, `$XDG_RUNTIME_DIR/voice-jad.sock` is used |
+| ShowStatus | True | Shows `🎙️`, the partial text, and `…` near the cursor |
 
-```sh
-setxkbmap -option caps:menu
-```
+### Daemon settings
 
-On KDE, open System Settings, go to Keyboard, then Key Bindings, then Caps Lock behavior, and choose "Make Caps Lock an additional Menu key".
+Write them in `~/.config/voice-jad/config.toml`. See `daemon/config.example.toml` for an example.
 
-Press CapsLock in a text field: a microphone mark near the cursor means the key reached fcitx5.
-If no mark appears, check whether the keyboard firmware or a key remapper turns CapsLock into another key.
-
-Tapping the trigger key (shorter than 250 milliseconds) starts recording and keeps it on.
-Tap again to stop recording; the transcript is inserted at the cursor.
-
-Holding the trigger key records while it is held down.
-Releasing it stops recording; the transcript is inserted at the cursor.
-
-While recording, `🎙️` appears near the cursor followed by a live transcript of what you have said so far (its last 40 characters).
-The live transcript updates about every 0.5 seconds and is only a preview.
-The inserted text comes from transcribing the recording again as a whole after it stops, with homophone correction.
-`…` appears while the recording is being transcribed.
-
-Long dictation is inserted in parts while you keep speaking.
-Once 60 seconds of recording are not yet inserted, the part up to the longest pause in their second half is transcribed the same way and inserted, and recording continues.
-Recording ends by itself after 600 seconds in total, and the rest is inserted as if you had stopped.
-
-Press Escape while recording to cancel the part not yet inserted.
-All other keys continue to work normally in the current input method, so you can edit right after dictating.
-
-If focus moves to another window while recording (a notification, a window switch), recording stops and is transcribed.
-The text is inserted when the original text field gets focus back.
-
-The trigger does not start dictation while the input method has uncommitted composition text; a message near the cursor asks you to commit it first.
-
-The recognition language defaults to `auto`.
-Both Japanese and English are recognized, and the daemon picks the language.
-You can also pin it to `ja` or `en` in the configuration.
-
-The first dictation after login can take a few seconds longer, because the daemon loads its models on first use.
-
-## Japanese homophone correction
-
-Japanese transcripts sometimes pick the wrong homophone, such as 機会 for 機械.
-The daemon turns the transcript back into its reading and converts it again with the kana-kanji model [jinen-v2-small](https://huggingface.co/togatogah/jinen-v2-small.gguf).
-Each place where the conversion differs from the transcript is a candidate fix, and the language model [TinySwallow-1.5B](https://huggingface.co/SakanaAI/TinySwallow-1.5B) accepts or rejects each candidate.
-Both models use up to 64 characters before the cursor as context.
-The context is sent only when the application provides surrounding text, and it is never logged.
-Parts already inserted during a long dictation are context for the parts that follow.
-
-A candidate is accepted only when the language model finds the fixed text clearly more likely than the transcript.
-The transcript is corrected in pieces, cut at sentence ends or at a phrase boundary about every 40 characters, with the preceding text as context.
-On 96 short synthesized utterances this removed errors from 12 of them (3 before the language model judged the fixes).
-On 22 dictations of 10 seconds to 2 minutes it cut character errors from 128 to 111, and on 12 plain-form paragraphs (no です/ます endings) from 39 to 32, without making any utterance worse.
-On 4 CPU threads a correction takes about 0.1 s for a short utterance, 1 s for 30 seconds of speech and 2.4 to 3.1 s for a minute.
-A long recording is cut at pauses while it continues and the parts are corrected as they are cut, so after it stops only the last part is left to correct (for a 2.5-minute recording, 7.1 s from stop to text against 4.3 s without correction).
-
-`voice-jad-download-models` (`scripts/download-models.sh` in the repository) downloads the models (about 80 MB for jinen-v2-small, 940 MB for TinySwallow-1.5B) into `~/.local/share/voice-jad/models/`.
-Correction adds about 1.1 GB to the daemon's memory use.
-Without either model file, correction is disabled and transcripts are typed as recognized.
-Correction needs a CPU with AVX2, FMA, F16C and BMI2 (Intel Haswell, AMD Excavator or later); on other CPUs it is disabled automatically.
-
-To turn correction off, add the following to `~/.config/voice-jad/config.toml`.
+| Key | Default | Description |
+| --- | --- | --- |
+| target | default microphone | PipeWire source name. While it is unplugged, the default microphone is used |
+| partial_interval_ms | 500 | Partial text update interval in milliseconds. 0 hides partial text |
+| commit_after_seconds | 60 | Length of a long recording before its earlier part is typed, in seconds |
+| max_seconds | 120 | Length at which speech without pauses is cut, in seconds |
+| max_recording_seconds | 600 | Length at which recording stops automatically, in seconds |
+| correction.enabled | true | Whether to correct homophones. Correction uses about 1.1 GB more memory |
+| correction.judge_margin | 2.0 | Log-likelihood difference a candidate fix needs to be accepted. Higher means fewer fixes |
 
 ```toml
+target = "alsa_input.example"
+partial_interval_ms = 0
+
 [correction]
 enabled = false
 ```
 
-`judge_margin` is the log-likelihood difference, in nats, that a candidate needs to be accepted (default 2.0).
-Larger values accept fewer candidates, smaller values more.
-The former `margin` setting was removed; the daemon refuses to start while the config file still contains it, so delete it.
+Correction needs a CPU with AVX2, FMA, F16C, and BMI2. It turns itself off on other CPUs or when the correction models are missing.
 
-## Configuration
-
-Open `fcitx5-configtool`, go to Addons, and select "Japanese Voice Input" to configure it.
-The settings are stored in `~/.config/fcitx5/conf/voiceja.conf`.
-
-| Setting | Default | Description |
-| --- | --- | --- |
-| TriggerKey | Menu | Starts and stops recording |
-| CancelKey | Escape | Cancels the current recording |
-| TapThresholdMs | 250 | Presses shorter than this lock the recording on; longer presses record only while held |
-| Language | auto | auto, ja, or en |
-| SocketPath | Empty | Uses `$XDG_RUNTIME_DIR/voice-jad.sock` when empty |
-| ShowStatus | True | Shows `🎙️` with the live transcript, or `…`, near the cursor |
-
-To use a different microphone, create `~/.config/voice-jad/config.toml` and specify its PipeWire source name.
-See `daemon/config.example.toml` for the complete configuration example.
-
-```toml
-target = "alsa_input.example"
-```
-
-While that microphone is unplugged, the default source is recorded; once it is connected again, recording returns to it.
-
-`partial_interval_ms` sets how often the live transcript updates, in milliseconds (default 500).
-Set it to 0 to turn the live transcript off.
-
-```toml
-partial_interval_ms = 0
-```
-
-`commit_after_seconds` (default 60) sets how much recording is held before a part is inserted during long dictation.
-A part without any pause is cut at its quietest moment once it reaches `max_seconds` (default 120).
-`max_recording_seconds` (default 600) ends a recording by itself.
-
-```toml
-commit_after_seconds = 30
-max_recording_seconds = 900
-```
-
-Restart the daemon after changing its configuration.
+Restart the daemon after changing settings. Logs are available through `journalctl`.
 
 ```sh
 systemctl --user restart voice-jad.service
-```
-
-Use the following command to inspect daemon logs.
-
-```sh
 journalctl --user -u voice-jad.service -f
 ```
+
+## Architecture
+
+```mermaid
+flowchart LR
+    A[Voice input] --> B[Transcribe]
+    B --> C[Detect language]
+    C --> D{Japanese?}
+    D -->|Japanese| E[Decide whether fixes are needed and fix only those spots]
+    D -->|English| F[Type at the cursor]
+    E --> F
+```
+
+1. The trigger key starts recording from the microphone.
+2. The audio is transcribed in Japanese and English at the same time.
+3. The spoken language is decided from the two results. When the language is fixed in the settings, only that language is transcribed and no detection runs.
+4. For Japanese, the text is checked for spots that need fixing, such as homophone mix-ups, and only those spots are fixed. English is not corrected.
+5. The final text is typed at the cursor.
 
 ## License
 
 fcitx5-voice-ja itself is released under the MIT License (`LICENSE`).
-
-The package bundles the shared libraries of [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (Apache License 2.0, `LICENSE-APACHE-2.0`) and [ONNX Runtime](https://github.com/microsoft/onnxruntime) (MIT License) as the speech recognition runtime.
-
-The NVIDIA Parakeet models downloaded at install time are distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), the Silero VAD model under the MIT License, jinen-v2-small under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), and TinySwallow-1.5B under the Apache License 2.0.
-The TinySwallow-1.5B model card describes the model as an experimental prototype for research and development, not intended for commercial use or mission-critical deployment, used at the user's own risk and without guaranteed performance.
-The models are not part of the package.
-
-The daemon embeds [llama.cpp](https://github.com/ggml-org/llama.cpp) (MIT License) to run the correction models and the IPADIC dictionary (`licenses/ipadic.LICENSE`) to look up readings.
-
-See `THIRD_PARTY_NOTICES.md` for the full list of bundled and downloaded components.
+See `THIRD_PARTY_NOTICES.md` for the licenses of the bundled libraries, downloaded models, and embedded dictionary.
