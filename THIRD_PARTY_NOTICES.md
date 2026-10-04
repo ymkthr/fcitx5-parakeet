@@ -19,7 +19,10 @@ following third-party components.
 - Copyright (c) Microsoft Corporation
 - License: MIT License (`licenses/onnxruntime.LICENSE`)
 - Source: https://github.com/microsoft/onnxruntime
-- Files: `/usr/lib/voice-jad/libonnxruntime.so` (bundled in the sherpa-onnx release archive)
+- Files: `/usr/lib/voice-jad/libonnxruntime.so` 1.27.1 (bundled in the sherpa-onnx 1.13.7 release archive)
+- The components built into it (protobuf, abseil, re2, Eigen and others) are listed with their
+  licenses in `licenses/onnxruntime-ThirdPartyNotices.txt`, taken from the onnxruntime v1.27.1
+  tag; replace it when a sherpa-onnx upgrade changes the ONNX Runtime version
 
 ### llama.cpp
 
@@ -38,10 +41,11 @@ following third-party components.
 ### Rust crates
 
 The daemon statically links the crates in `daemon/Cargo.lock` that are not
-build-time only (`cargo tree -e normal`). They are available under MIT and/or
-Apache-2.0, except the ICU4X crates (`icu_*`, `zerovec`, `yoke` and friends),
-which are under Unicode-3.0, and `encoding_rs`, which adds BSD-3-Clause for
-its data. Some crates also offer BSL-1.0, Unlicense or Zlib as alternatives.
+build-time only. They are available under MIT and/or Apache-2.0, except the
+ICU4X crates (`icu_*`, `zerovec`, `yoke` and friends), which are under
+Unicode-3.0, and `encoding_rs`, which adds BSD-3-Clause for its data.
+`licenses/rust-crates.LICENSE` holds each crate's license text and copyright
+notice; regenerate it with `scripts/gen-crate-licenses.sh` after `Cargo.lock` changes.
 
 ## Downloaded at install time
 

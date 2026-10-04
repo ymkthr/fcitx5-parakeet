@@ -56,5 +56,7 @@ package() {
   install -Dm644 "$startdir/../../licenses/onnxruntime.LICENSE" \
     "$pkgdir/usr/share/licenses/$pkgname/onnxruntime.LICENSE"
   install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" \
-    "$startdir/../../licenses/llama.cpp.LICENSE" "$startdir/../../licenses/ipadic.LICENSE"
+    "$startdir/../../licenses/llama.cpp.LICENSE" "$startdir/../../licenses/ipadic.LICENSE" \
+    "$startdir/../../licenses/onnxruntime-ThirdPartyNotices.txt" \
+    "$startdir/../../licenses/rust-crates.LICENSE"
 }

@@ -64,5 +64,6 @@ package() {
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 LICENSE-APACHE-2.0 "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE-2.0"
   install -Dm644 licenses/onnxruntime.LICENSE "$pkgdir/usr/share/licenses/$pkgname/onnxruntime.LICENSE"
-  install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" licenses/llama.cpp.LICENSE licenses/ipadic.LICENSE
+  install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" licenses/llama.cpp.LICENSE licenses/ipadic.LICENSE \
+    licenses/onnxruntime-ThirdPartyNotices.txt licenses/rust-crates.LICENSE
 }

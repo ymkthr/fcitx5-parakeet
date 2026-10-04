@@ -34,4 +34,5 @@ install -Dm644 LICENSE "$dest$licensedir/LICENSE"
 install -Dm644 LICENSE-APACHE-2.0 "$dest$licensedir/LICENSE-APACHE-2.0"
 install -Dm644 licenses/onnxruntime.LICENSE "$dest$licensedir/onnxruntime.LICENSE"
 install -Dm644 licenses/llama.cpp.LICENSE "$dest$licensedir/llama.cpp.LICENSE"
-install -Dm644 licenses/ipadic.LICENSE "$dest$licensedir/ipadic.LICENSE"
+install -Dm644 -t "$dest$licensedir" licenses/ipadic.LICENSE \
+  licenses/onnxruntime-ThirdPartyNotices.txt licenses/rust-crates.LICENSE

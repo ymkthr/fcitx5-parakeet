@@ -69,6 +69,8 @@ packaging/stage.sh %{buildroot} "$PWD/%{sherpa_archive}/lib" %{_libdir} %{_licen
 %license %{_licensedir}/%{name}/onnxruntime.LICENSE
 %license %{_licensedir}/%{name}/llama.cpp.LICENSE
 %license %{_licensedir}/%{name}/ipadic.LICENSE
+%license %{_licensedir}/%{name}/onnxruntime-ThirdPartyNotices.txt
+%license %{_licensedir}/%{name}/rust-crates.LICENSE
 %doc %{_docdir}/%{name}/THIRD_PARTY_NOTICES.md
 %doc %{_docdir}/%{name}/config.example.toml
 %{_bindir}/voice-jad
