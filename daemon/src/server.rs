@@ -55,6 +55,7 @@ use crate::asr::{self, Gate, Pool, SegmentLimits};
 use crate::audio::{Capture, CaptureConfig, Recording};
 use crate::config::{Config, AUTO_LANG};
 use crate::correct::Corrector;
+use crate::sherpa::Transcript;
 
 /// Seconds to wait for the first samples before declaring the microphone dead.
 const RECORDER_START_TIMEOUT: Duration = Duration::from_secs(3);
@@ -613,10 +614,11 @@ impl Daemon {
     ) -> Result<Option<Decoded>> {
         let started = Instant::now();
         let seconds = pcm.len() as f32 / self.cfg.sample_rate as f32;
-        let Some((result_lang, text)) = self.decode(lang, pcm, after_cut).await? else {
+        let Some((result_lang, transcript)) = self.decode(lang, pcm, after_cut).await? else {
             info!("{lang}: {seconds:.1}s audio -> no speech detected");
             return Ok(None);
         };
+        let text = punctuate(&result_lang, transcript).await;
         let (text, correction) = self.correct(&result_lang, text, context).await;
         info!(
             "{lang}: {seconds:.1}s audio -> {result_lang} {} chars in {:.2}s{correction}",
@@ -656,7 +658,7 @@ impl Daemon {
         lang: &str,
         pcm: Vec<i16>,
         after_cut: bool,
-    ) -> Result<Option<(String, String)>> {
+    ) -> Result<Option<(String, Transcript)>> {
         let samples = asr::pcm16_to_f32(&pcm);
         if samples.is_empty() || asr::is_silent(&samples) {
             return Ok(None);
@@ -677,8 +679,8 @@ impl Daemon {
         self.decode_speech(lang, samples).await.map(Some)
     }
 
-    /// Returns the result language and its text.
-    async fn decode_speech(&self, lang: &str, samples: Vec<f32>) -> Result<(String, String)> {
+    /// Returns the result language and its transcript.
+    async fn decode_speech(&self, lang: &str, samples: Vec<f32>) -> Result<(String, Transcript)> {
         let samples = Arc::new(samples);
         if lang == AUTO_LANG {
             let auto = &self.cfg.auto;
@@ -686,11 +688,11 @@ impl Daemon {
                 self.decode_one(&auto.detector, Arc::clone(&samples)),
                 self.decode_one(&auto.fallback, Arc::clone(&samples)),
             );
-            let result = asr::decide_auto(&self.cfg, &detected?, &fallback?);
-            return Ok((result.lang, result.text));
+            let result = asr::decide_auto(&self.cfg, detected?, fallback?);
+            return Ok((result.lang, result.transcript));
         }
         let transcript = self.decode_one(lang, samples).await?;
-        Ok((lang.to_string(), transcript.text))
+        Ok((lang.to_string(), transcript))
     }
 
     /// Re-decodes the unsettled tail; a tail longer than
@@ -708,7 +710,7 @@ impl Daemon {
             return Ok(settled.text.clone());
         }
         let Some(gate) = self.gate.clone() else {
-            return Ok(self.decode_speech(lang, tail).await?.1);
+            return Ok(self.decode_speech(lang, tail).await?.1.text);
         };
         let rate = self.cfg.sample_rate as f32;
         let vad = Arc::clone(&gate);
@@ -729,7 +731,7 @@ impl Daemon {
             let rest_segments = segments.split_off(after);
             if let Some(span) = gate.span(tail.len(), &segments) {
                 decoded += span.len();
-                let (_, text) = self.decode_speech(lang, asr::keep(tail, span)).await?;
+                let text = self.decode_speech(lang, asr::keep(tail, span)).await?.1.text;
                 settled.text = asr::join(&settled.text, &text);
             }
             settled.samples += cut;
@@ -740,7 +742,7 @@ impl Daemon {
         let text = match gate.span(tail.len(), &segments) {
             Some(span) => {
                 decoded += span.len();
-                self.decode_speech(lang, asr::keep(tail, span)).await?.1
+                self.decode_speech(lang, asr::keep(tail, span)).await?.1.text
             }
             None => String::new(),
         };
@@ -758,7 +760,7 @@ impl Daemon {
         &self,
         lang: &str,
         samples: Arc<Vec<f32>>,
-    ) -> Result<crate::sherpa::Transcript> {
+    ) -> Result<Transcript> {
         let pool = Arc::clone(&self.pool);
         let lang = lang.to_string();
         let mut transcript =
@@ -767,6 +769,25 @@ impl Daemon {
                 .context("decode task")??;
         transcript.text = asr::sanitize(&transcript.text);
         Ok(transcript)
+    }
+}
+
+/// Marks pauses and the end of a Japanese transcript; any other is kept.
+async fn punctuate(lang: &str, transcript: Transcript) -> String {
+    if lang != "ja" || transcript.text.is_empty() {
+        return transcript.text;
+    }
+    let text = transcript.text.clone();
+    match tokio::task::spawn_blocking(move || crate::punct::punctuate(&transcript)).await {
+        Ok(Ok(punctuated)) => punctuated,
+        Ok(Err(e)) => {
+            warn!("punctuation skipped: {e:#}");
+            text
+        }
+        Err(e) => {
+            warn!("punctuation panicked: {e}");
+            text
+        }
     }
 }
 

@@ -68,6 +68,16 @@ pub struct Transcript {
     /// Mean per-token log-probability of the greedy path; None when the model
     /// does not report it (NeMo CTC) or nothing was emitted.
     pub confidence: Option<f32>,
+    /// The emitted tokens in order; empty when the model reports no timestamps.
+    pub tokens: Vec<Token>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+    /// SentencePiece text; `▁` marks a word start.
+    pub text: String,
+    /// Seconds from the start of the decoded audio.
+    pub start: f32,
 }
 
 pub struct Recognizer {
@@ -158,6 +168,10 @@ struct ResultJson {
     text: String,
     #[serde(default)]
     ys_log_probs: Vec<f32>,
+    #[serde(default)]
+    tokens: Vec<String>,
+    #[serde(default)]
+    timestamps: Vec<f32>,
 }
 
 fn parse_result(json: &str) -> Result<Transcript> {
@@ -167,9 +181,19 @@ fn parse_result(json: &str) -> Result<Transcript> {
     } else {
         Some(r.ys_log_probs.iter().sum::<f32>() / r.ys_log_probs.len() as f32)
     };
+    let tokens = if r.tokens.len() == r.timestamps.len() {
+        r.tokens
+            .into_iter()
+            .zip(r.timestamps)
+            .map(|(text, start)| Token { text, start })
+            .collect()
+    } else {
+        Vec::new()
+    };
     Ok(Transcript {
         text: r.text,
         confidence,
+        tokens,
     })
 }
 
