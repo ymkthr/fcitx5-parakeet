@@ -26,11 +26,11 @@ paru -S fcitx5-voice-ja   # or: yay -S fcitx5-voice-ja
 
 ### From a deb or rpm
 
-Build the package on a machine with docker or podman, then install it. See `packaging/README.md` for details.
+Build the package on a machine with docker or podman and `cargo`, then install it. See `packaging/README.md` for details.
 
 ```sh
 packaging/build.sh deb    # defaults to debian:trixie
-packaging/build.sh rpm    # defaults to fedora:42
+packaging/build.sh rpm    # defaults to fedora:44
 sudo apt install ./packaging/dist/fcitx5-voice-ja_*.deb
 sudo dnf install ./packaging/dist/fcitx5-voice-ja-*.rpm
 ```

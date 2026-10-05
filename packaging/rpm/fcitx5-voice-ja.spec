@@ -1,5 +1,10 @@
 %global sherpa_version 1.13.7
 %global sherpa_archive sherpa-onnx-v%{sherpa_version}-linux-x64-shared-no-tts
+%global ipadic_archive mecab-ipadic-2.7.0-20250920
+# lindera-ipadic's build script reads its source archive from
+# <cache>/<lindera-ipadic version>-fmt<dictionary format version>/ instead of
+# downloading it; bump this with lindera in daemon/Cargo.lock.
+%global ipadic_cache lindera-cache/6.2.0-fmt2
 
 Name:           fcitx5-voice-ja
 Version:        0.4.0
@@ -9,8 +14,11 @@ Summary:        Offline Japanese and English speech input for fcitx5 using NVIDI
 # sherpa-onnx libraries; IPADIC: the dictionary embedded in voice-jad.
 License:        MIT AND Apache-2.0 AND LicenseRef-IPADIC
 URL:            https://github.com/ymkthr/fcitx5-voice-ja
-Source0:        %{name}-%{version}.tar.gz
+Source0:        https://github.com/ymkthr/fcitx5-voice-ja/archive/v%{version}/%{name}-%{version}.tar.gz
 Source1:        https://github.com/k2-fsa/sherpa-onnx/releases/download/v%{sherpa_version}/%{sherpa_archive}.tar.bz2
+# cargo vendor output for daemon/Cargo.lock: vendor/ and .cargo/config.
+Source2:        vendor.tar.xz
+Source3:        https://Lindera.dev/%{ipadic_archive}.tar.gz
 ExclusiveArch:  x86_64
 
 BuildRequires:  cargo >= 1.88
@@ -43,7 +51,9 @@ The speech models are not included; run voice-jad-download-models as your
 desktop user after installing.
 
 %prep
-%setup -q -n %{name}-%{version} -a 1
+%setup -q -n %{name}-%{version} -a 1 -a 2
+mkdir -p %{ipadic_cache}
+cp %{SOURCE3} %{ipadic_cache}/
 
 %build
 cmake -S fcitx5 -B fcitx-build \
@@ -57,6 +67,8 @@ export SHERPA_ONNX_RPATH=%{_libdir}/voice-jad
 # ggml turns every SIMD option off when SOURCE_DATE_EPOCH is set, which
 # rpmbuild does; voice-jad checks for these at start-up.
 export GGML_SSE42=ON GGML_AVX=ON GGML_AVX2=ON GGML_BMI2=ON GGML_FMA=ON GGML_F16C=ON
+export CARGO_NET_OFFLINE=true
+export LINDERA_BUILD_DICTIONARY_CACHE_DIR="$PWD/lindera-cache"
 cargo build --manifest-path daemon/Cargo.toml --release --locked
 
 %install

@@ -28,11 +28,11 @@ paru -S fcitx5-voice-ja   # または yay -S fcitx5-voice-ja
 
 ### debまたはrpmから
 
-dockerまたはpodmanのあるマシンでパッケージをビルドしてインストールします。詳細は`packaging/README.md`を参照してください。
+dockerまたはpodmanと`cargo`のあるマシンでパッケージをビルドしてインストールします。詳細は`packaging/README.md`を参照してください。
 
 ```sh
 packaging/build.sh deb    # 既定はdebian:trixie
-packaging/build.sh rpm    # 既定はfedora:42
+packaging/build.sh rpm    # 既定はfedora:44
 sudo apt install ./packaging/dist/fcitx5-voice-ja_*.deb
 sudo dnf install ./packaging/dist/fcitx5-voice-ja-*.rpm
 ```

@@ -1,0 +1,4 @@
+<services>
+  <!-- Fetches the spec's Source URLs: the release tarball, sherpa-onnx and IPADIC. -->
+  <service name="download_files"/>
+</services>
