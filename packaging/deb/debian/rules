@@ -1,9 +1,17 @@
 #!/usr/bin/make -f
-# Build from a tree exported by packaging/build.sh. The sherpa-onnx release
-# archive is expected unpacked at $(SHERPA_ONNX_DIR) (build.sh sets it).
+# Expects these archives next to debian/, as OBS lays them out and
+# packaging/build.sh copies them: the sherpa-onnx release, vendor.tar.xz (cargo
+# vendor output for daemon/Cargo.lock) and the IPADIC source that
+# lindera-ipadic would otherwise download at build time.
 export DH_VERBOSE = 1
 export CARGO_HOME = $(CURDIR)/debian/cargo-home
-export SHERPA_ONNX_LIB_DIR = $(SHERPA_ONNX_DIR)/lib
+export CARGO_NET_OFFLINE = true
+SHERPA_ARCHIVE = sherpa-onnx-v1.13.7-linux-x64-shared-no-tts
+IPADIC_ARCHIVE = mecab-ipadic-2.7.0-20250920.tar.gz
+# <lindera-ipadic version>-fmt<dictionary format version>; bump with lindera.
+IPADIC_CACHE = lindera-cache/6.2.0-fmt2
+export LINDERA_BUILD_DICTIONARY_CACHE_DIR = $(CURDIR)/lindera-cache
+export SHERPA_ONNX_LIB_DIR = $(CURDIR)/$(SHERPA_ARCHIVE)/lib
 export SHERPA_ONNX_RPATH = /usr/lib/voice-jad
 # ggml turns every SIMD option off when SOURCE_DATE_EPOCH is set, which
 # dpkg-buildpackage always does; voice-jad checks for these at start-up.
@@ -21,6 +29,10 @@ DEST = $(CURDIR)/debian/$(PKG)
 	dh $@
 
 override_dh_auto_configure:
+	tar xjf $(SHERPA_ARCHIVE).tar.bz2
+	tar xJf vendor.tar.xz
+	mkdir -p $(IPADIC_CACHE)
+	cp $(IPADIC_ARCHIVE) $(IPADIC_CACHE)/
 	cmake -S fcitx5 -B fcitx-build \
 		-DCMAKE_BUILD_TYPE=None \
 		-DCMAKE_INSTALL_PREFIX=/usr \
@@ -36,7 +48,7 @@ override_dh_auto_install:
 override_dh_auto_test:
 
 override_dh_auto_clean:
-	rm -rf fcitx-build daemon/target debian/cargo-home
+	rm -rf fcitx-build daemon/target debian/cargo-home $(SHERPA_ARCHIVE) vendor .cargo lindera-cache
 
 # The prebuilt sherpa-onnx/onnxruntime libraries are private to voice-jad.
 override_dh_shlibdeps:

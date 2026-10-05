@@ -1,3 +1,10 @@
+fcitx5-voice-ja (0.4.1-1) unstable; urgency=medium
+
+  * Ship third-party copyright notices.
+  * Build without network for OBS.
+
+ -- ymkthr <ymkthr@users.noreply.github.com>  Tue, 06 Oct 2026 12:00:00 +0900
+
 fcitx5-voice-ja (0.4.0-1) unstable; urgency=medium
 
   * Rename fcitx5-parakeet to fcitx5-voice-ja.
