@@ -27,8 +27,8 @@ linderaを上げたときは、`deb/debian/rules`と`rpm/fcitx5-voice-ja.spec`�
 ビルドしたパッケージのインストールは通常どおりです。
 
 ```sh
-sudo apt install ./packaging/dist/fcitx5-voice-ja_0.4.0-1_amd64.deb
-sudo dnf install ./packaging/dist/fcitx5-voice-ja-0.4.0-1.fc44.x86_64.rpm
+sudo apt install ./packaging/dist/fcitx5-voice-ja_0.4.1-1_amd64.deb
+sudo dnf install ./packaging/dist/fcitx5-voice-ja-0.4.1-1.fc44.x86_64.rpm
 ```
 
 インストール後の手順（モデルの取得、socketの有効化、fcitx5の再起動）はAURと同じです。README.mdを参照してください。
@@ -39,7 +39,7 @@ sudo dnf install ./packaging/dist/fcitx5-voice-ja-0.4.0-1.fc44.x86_64.rpm
 2. masterに取り込んだ後、タグを打って送る。
 
    ```sh
-   git tag v0.4.0 && git push origin v0.4.0
+   git tag v0.4.1 && git push origin v0.4.1
    ```
 
 3. `aur/`でチェックサムと`.SRCINFO`を更新し、ビルドを確認する。
@@ -66,7 +66,7 @@ OBSのビルドはネットワークを使えません。リリースのtarball�
    osc co home:ymkthr:fcitx5-voice-ja fcitx5-voice-ja
    cd home:ymkthr:fcitx5-voice-ja/fcitx5-voice-ja
    ~/path/to/fcitx5-voice-ja/packaging/obs/assemble.sh .
-   osc addremove && osc ci -m "Update to 0.4.0"
+   osc addremove && osc ci -m "Update to 0.4.1"
    ```
 
 3. `osc results`ですべてのディストリが`succeeded`になるのを確かめる。

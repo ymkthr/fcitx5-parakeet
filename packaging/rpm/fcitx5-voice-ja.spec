@@ -7,7 +7,7 @@
 %global ipadic_cache lindera-cache/6.2.0-fmt2
 
 Name:           fcitx5-voice-ja
-Version:        0.4.0
+Version:        0.4.1
 Release:        1%{?dist}
 Summary:        Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet
 # MIT: this project, ONNX Runtime and llama.cpp; Apache-2.0: the bundled
@@ -96,6 +96,9 @@ packaging/stage.sh %{buildroot} "$PWD/%{sherpa_archive}/lib" %{_libdir} %{_licen
 %{_userunitdir}/voice-jad.socket
 
 %changelog
+* Tue Oct 06 2026 ymkthr <ymkthr@users.noreply.github.com> - 0.4.1-1
+- Ship third-party copyright notices; build without network for OBS.
+
 * Sun Oct 04 2026 ymkthr <ymkthr@users.noreply.github.com> - 0.4.0-1
 - Rename fcitx5-parakeet to fcitx5-voice-ja.
 
