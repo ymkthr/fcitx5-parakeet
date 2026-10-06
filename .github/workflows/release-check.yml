@@ -1,0 +1,40 @@
+name: Release checks
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Validate release label cardinality
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH" |
+            python3 packaging/release.py labels
+
+      - name: Run release behavior tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 packaging/test_release.py
+          python3 packaging/obs/test_publish.py
+
+      - name: Verify the live release fields
+        shell: bash
+        run: python3 packaging/release.py verify

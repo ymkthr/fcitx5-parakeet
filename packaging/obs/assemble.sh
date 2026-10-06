@@ -13,6 +13,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PKG=fcitx5-voice-ja
 DEBIAN="$ROOT/packaging/deb/debian"
+export LC_ALL=C
+export TZ=UTC
+SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct HEAD)}
+export SOURCE_DATE_EPOCH
 
 out=${1:?usage: packaging/obs/assemble.sh DIR}
 mkdir -p "$out"
@@ -25,7 +29,15 @@ ipadic="$(rules_var IPADIC_ARCHIVE)"
 
 cp "$ROOT/packaging/obs/_service" "$ROOT/packaging/rpm/$PKG.spec" "$out/"
 "$ROOT/packaging/vendor.sh" "$out/vendor.tar.xz"
-tar -C "$DEBIAN/.." --owner=0 --group=0 -cJf "$out/debian.tar.xz" debian
+XZ_DEFAULTS= XZ_OPT=--threads=1 tar -C "$DEBIAN/.." \
+  --sort=name \
+  --format=gnu \
+  --owner=0 \
+  --group=0 \
+  --numeric-owner \
+  --mode='a=rX,u+w' \
+  --mtime="@$SOURCE_DATE_EPOCH" \
+  -cJf "$out/debian.tar.xz" debian
 
 # A .dsc carries the source paragraph of debian/control plus the package list.
 # DEBTRANSFORM-FILES puts the extra archives at the top of the unpacked tree,

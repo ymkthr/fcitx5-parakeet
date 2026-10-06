@@ -6,6 +6,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export LC_ALL=C
+export TZ=UTC
+SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH:-$(git -C "$ROOT" show -s --format=%ct HEAD)}
+export SOURCE_DATE_EPOCH
 out=${1:?usage: packaging/vendor.sh OUT_FILE}
 
 work="$(mktemp -d)"
@@ -19,5 +23,13 @@ replace-with = "vendored-sources"
 [source.vendored-sources]
 directory = "vendor"
 EOF
-tar -C "$work" --owner=0 --group=0 --sort=name -cJf "$out.$$" vendor .cargo
+XZ_DEFAULTS= XZ_OPT=--threads=1 tar -C "$work" \
+  --sort=name \
+  --format=gnu \
+  --owner=0 \
+  --group=0 \
+  --numeric-owner \
+  --mode='a=rX,u+w' \
+  --mtime="@$SOURCE_DATE_EPOCH" \
+  -cJf "$out.$$" vendor .cargo
 mv "$out.$$" "$out"
