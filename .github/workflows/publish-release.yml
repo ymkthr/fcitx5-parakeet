@@ -1,0 +1,328 @@
+name: Publish release
+
+on:
+  repository_dispatch:
+    types: [release-tagged]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Canonical release tag to recover
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      previous_version: ${{ steps.release.outputs.previous_version }}
+      release_commit: ${{ steps.release.outputs.release_commit }}
+      source_date_epoch: ${{ steps.release.outputs.source_date_epoch }}
+    steps:
+      - name: Check out the trusted default branch and tags
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: release
+        name: Resolve and validate the release tag
+        env:
+          RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
+          REQUESTED_TAG: ${{ github.event.client_payload.tag || inputs.tag }}
+          DISPATCH_COMMIT: ${{ github.event.client_payload.release_commit || '' }}
+        run: |
+          set -euo pipefail
+
+          die() {
+            echo "$*" >&2
+            exit 1
+          }
+
+          [[ $RELEASE_BRANCH == main || $RELEASE_BRANCH == master ]] ||
+            die "default branch must be main or master"
+          [[ $GITHUB_REF == "refs/heads/$RELEASE_BRANCH" ]] ||
+            die "publish workflow must run from $RELEASE_BRANCH"
+
+          require_trailer() {
+            local commit=$1 key=$2 values=()
+            mapfile -t values < <(
+              git show -s --format=%B "$commit" |
+                git interpret-trailers --parse |
+                sed -n "s/^${key}: //p"
+            )
+            ((${#values[@]} == 1)) || die "$commit has ${#values[@]} $key trailers"
+            printf '%s\n' "${values[0]}"
+          }
+
+          [[ $REQUESTED_TAG =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            die "tag must use canonical vX.Y.Z syntax"
+          git show-ref --verify --quiet "refs/tags/$REQUESTED_TAG" ||
+            die "tag $REQUESTED_TAG does not exist"
+          [[ $(git cat-file -t "refs/tags/$REQUESTED_TAG") == commit ]] ||
+            die "$REQUESTED_TAG is not a lightweight tag"
+          release_commit="$(git rev-parse "refs/tags/$REQUESTED_TAG")"
+          [[ -z $DISPATCH_COMMIT || $DISPATCH_COMMIT == "$release_commit" ]] ||
+            die "dispatch commit does not match $REQUESTED_TAG"
+          git merge-base --is-ancestor "$release_commit" "origin/$RELEASE_BRANCH" ||
+            die "$REQUESTED_TAG is not an ancestor of $RELEASE_BRANCH"
+
+          pr_number="$(require_trailer "$release_commit" Release-PR)"
+          merge_sha="$(require_trailer "$release_commit" Release-Merge-SHA)"
+          release_kind="$(require_trailer "$release_commit" Release-Kind)"
+          previous="$(require_trailer "$release_commit" Release-Previous-Version)"
+          [[ $pr_number =~ ^[1-9][0-9]*$ ]] || die "invalid Release-PR trailer"
+          [[ $merge_sha =~ ^[0-9a-f]{40}$ ]] || die "invalid Release-Merge-SHA trailer"
+          [[ $release_kind =~ ^(major|minor|patch)$ ]] || die "invalid Release-Kind trailer"
+          [[ $previous =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            die "invalid Release-Previous-Version trailer"
+          git merge-base --is-ancestor "$merge_sha" "$release_commit" ||
+            die "release commit does not contain its recorded merge SHA"
+
+          version=${REQUESTED_TAG#v}
+          [[ $(git show -s --format=%s "$release_commit") == "Release $REQUESTED_TAG" ]] ||
+            die "release commit subject does not match $REQUESTED_TAG"
+          git checkout --detach --force "$release_commit"
+          python3 packaging/release.py verify \
+            --expected-version "$version" \
+            --previous-version "$previous" \
+            --kind "$release_kind" >/dev/null
+
+          {
+            echo "tag=$REQUESTED_TAG"
+            echo "version=$version"
+            echo "previous_version=$previous"
+            echo "release_commit=$release_commit"
+            echo "source_date_epoch=$(git show -s --format=%ct "$release_commit")"
+          } >>"$GITHUB_OUTPUT"
+
+  prepare:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - id: archive
+        name: Download and inspect the GitHub tag archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/release.tar.gz"
+          extracted="$RUNNER_TEMP/release-tree"
+          curl --fail --location --retry 3 \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/tarball/$RELEASE_TAG" \
+            --output "$archive"
+          source_root="$(python3 - "$archive" "$extracted" <<'PY'
+          import sys
+          import tarfile
+          from pathlib import Path, PurePosixPath
+
+          archive = Path(sys.argv[1])
+          destination = Path(sys.argv[2])
+          roots = set()
+          with tarfile.open(archive, "r:gz") as release:
+              members = release.getmembers()
+              if not members:
+                  raise SystemExit("release archive is empty")
+              for member in members:
+                  path = PurePosixPath(member.name)
+                  if path.is_absolute() or not path.parts or ".." in path.parts:
+                      raise SystemExit(f"unsafe archive path: {member.name}")
+                  if not (member.isdir() or member.isfile()):
+                      raise SystemExit(f"archive member is not a regular file or directory: {member.name}")
+                  roots.add(path.parts[0])
+              if len(roots) != 1:
+                  raise SystemExit("release archive must contain one top-level directory")
+              destination.mkdir()
+              release.extractall(destination, members=members, filter="data")
+          root = destination / roots.pop()
+          if not root.is_dir():
+              raise SystemExit("release archive top-level entry is not a directory")
+          print(root)
+          PY
+          )"
+          echo "source_root=$source_root" >>"$GITHUB_OUTPUT"
+
+      - name: Assemble deterministic OBS sources
+        env:
+          SOURCE_ROOT: ${{ steps.archive.outputs.source_root }}
+          SOURCE_DATE_EPOCH: ${{ needs.resolve.outputs.source_date_epoch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/release-artifact"
+          mkdir -p "$artifact/sources"
+          "$SOURCE_ROOT/packaging/obs/assemble.sh" "$artifact/sources"
+          python3 - "$artifact" <<'PY'
+          import hashlib
+          import os
+          import stat
+          import sys
+          from pathlib import Path
+
+          expected = {
+              "_service",
+              "fcitx5-voice-ja.spec",
+              "fcitx5-voice-ja.dsc",
+              "debian.tar.xz",
+              "vendor.tar.xz",
+          }
+          artifact = Path(sys.argv[1])
+          sources = artifact / "sources"
+          entries = list(os.scandir(sources))
+          names = {entry.name for entry in entries}
+          if names != expected:
+              raise SystemExit(f"assembled source set differs: {sorted(names)}")
+          lines = []
+          for entry in sorted(entries, key=lambda item: item.name):
+              if not stat.S_ISREG(entry.stat(follow_symlinks=False).st_mode):
+                  raise SystemExit(f"assembled source is not a regular file: {entry.name}")
+              digest = hashlib.sha256()
+              with open(entry.path, "rb") as source:
+                  for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              lines.append(f"{digest.hexdigest()}  {entry.name}\n")
+          (artifact / "SHA256SUMS").write_text("".join(lines), encoding="ascii")
+          PY
+
+      - name: Upload prepared source data
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: obs-sources-${{ needs.resolve.outputs.tag }}
+          path: ${{ runner.temp }}/release-artifact
+          if-no-files-found: error
+          retention-days: 30
+
+  github-release:
+    needs: [resolve, prepare]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Create or reuse the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName 2>/dev/null)"; then
+            if ! gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --generate-notes \
+              --title "$RELEASE_TAG"; then
+              release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName)"
+            else
+              release="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,tagName)"
+            fi
+          fi
+          jq -e --arg tag "$RELEASE_TAG" \
+            '.tagName == $tag and (.isDraft | not) and (.isPrerelease | not)' \
+            <<<"$release" >/dev/null
+
+  publish-obs:
+    needs: [resolve, prepare, github-release]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Check out trusted publishing code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Download prepared source data
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: obs-sources-${{ needs.resolve.outputs.tag }}
+          path: ${{ runner.temp }}/release-artifact
+
+      - name: Verify the source manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/release-artifact" <<'PY'
+          import hashlib
+          import os
+          import re
+          import stat
+          import sys
+          from pathlib import Path
+
+          expected = {
+              "_service",
+              "fcitx5-voice-ja.spec",
+              "fcitx5-voice-ja.dsc",
+              "debian.tar.xz",
+              "vendor.tar.xz",
+          }
+          artifact = Path(sys.argv[1])
+          root_entries = {entry.name: entry for entry in os.scandir(artifact)}
+          if set(root_entries) != {"sources", "SHA256SUMS"}:
+              raise SystemExit(f"artifact root differs: {sorted(root_entries)}")
+          if not stat.S_ISDIR(root_entries["sources"].stat(follow_symlinks=False).st_mode):
+              raise SystemExit("artifact sources entry is not a directory")
+          if not stat.S_ISREG(root_entries["SHA256SUMS"].stat(follow_symlinks=False).st_mode):
+              raise SystemExit("artifact manifest is not a regular file")
+
+          sources = artifact / "sources"
+          source_entries = {entry.name: entry for entry in os.scandir(sources)}
+          if set(source_entries) != expected:
+              raise SystemExit(f"artifact source set differs: {sorted(source_entries)}")
+          manifest = {}
+          for line in (artifact / "SHA256SUMS").read_text(encoding="ascii").splitlines():
+              match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9_.-]+)", line)
+              if match is None or match.group(2) in manifest:
+                  raise SystemExit("artifact manifest is malformed")
+              manifest[match.group(2)] = match.group(1)
+          if set(manifest) != expected:
+              raise SystemExit(f"manifest source set differs: {sorted(manifest)}")
+
+          for name, entry in source_entries.items():
+              if not stat.S_ISREG(entry.stat(follow_symlinks=False).st_mode):
+                  raise SystemExit(f"artifact source is not a regular file: {name}")
+              digest = hashlib.sha256()
+              with open(entry.path, "rb") as source:
+                  for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                      digest.update(chunk)
+              if digest.hexdigest() != manifest[name]:
+                  raise SystemExit(f"checksum mismatch for {name}")
+          PY
+
+      - name: Install the OBS client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes osc
+
+      - name: Reconcile OBS and wait for publication
+        env:
+          OBS_USERNAME: ${{ secrets.OBS_USERNAME }}
+          OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
+          PREVIOUS_VERSION: ${{ needs.resolve.outputs.previous_version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 packaging/obs/publish.py \
+            "$RUNNER_TEMP/release-artifact/sources" \
+            --version "$RELEASE_VERSION" \
+            --previous-version "$PREVIOUS_VERSION"
