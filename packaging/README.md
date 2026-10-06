@@ -40,7 +40,7 @@ sudo dnf install "./packaging/dist/fcitx5-voice-ja-${VERSION}-${REVISION}.fc${FE
 
 ## ラベルを付けてマージするとリリースが始まる
 
-`master`へマージするプルリクエストに、次のラベルを1つ付けます。
+デフォルトブランチが`main`または`master`のリポジトリで使えます。そのデフォルトブランチへマージするプルリクエストに、次のラベルを1つ付けます。
 
 - `release:major`: メジャーバージョンを上げます。
 - `release:minor`: マイナーバージョンを上げます。
@@ -52,7 +52,7 @@ sudo dnf install "./packaging/dist/fcitx5-voice-ja-${VERSION}-${REVISION}.fc${FE
 
 ### 第1段階でバージョン、コミット、タグを同時に確定する
 
-`tag-release.yml`は常に現在の`master`から処理を始めます。プルリクエストのheadはチェックアウトせず、実行もしません。
+`tag-release.yml`は常に現在のデフォルトブランチから処理を始めます。ブランチ名は`main`と`master`の両方に対応します。プルリクエストのheadはチェックアウトせず、実行もしません。
 
 ワークフローは次のファイルにあるバージョンが一致することを確認します。
 
@@ -67,13 +67,13 @@ sudo dnf install "./packaging/dist/fcitx5-voice-ja-${VERSION}-${REVISION}.fc${FE
 
 現在のバージョンが最大の正規タグと一致した場合だけ、指定された種類のバージョンを上げます。パッケージリビジョンは1へ戻します。DebianとRPMの変更履歴にはプルリクエスト番号とマージコミットの時刻だけを記録します。プルリクエストのタイトルと本文は取り込みません。
 
-バージョンコミットと軽量タグは`git push --atomic`で同時に送ります。別のリリースが先に`master`を更新した場合は、最新の状態からバージョンを計算し直します。同じプルリクエストを再実行した場合は、コミットの`Release-PR`、`Release-Merge-SHA`、`Release-Kind`、`Release-Previous-Version`トレーラーを検出します。この場合はバージョンを上げず、既存のタグを第2段階へ再送します。
+バージョンコミットと軽量タグは`git push --atomic`で同時に送ります。別のリリースが先にデフォルトブランチを更新した場合は、最新の状態からバージョンを計算し直します。同じプルリクエストを再実行した場合は、コミットの`Release-PR`、`Release-Merge-SHA`、`Release-Kind`、`Release-Previous-Version`トレーラーを検出します。この場合はバージョンを上げず、既存のタグを第2段階へ再送します。
 
 ### 第2段階でGitHub ReleaseとOBSを公開する
 
 `publish-release.yml`は第1段階から`repository_dispatch`を受け取ります。`GITHUB_TOKEN`でタグを送ってもタグpushのワークフローは起動しないため、この通知が必要です。
 
-第2段階はタグの形式、`master`からの到達性、コミットトレーラー、リポジトリ内のバージョンを改めて検査します。その後、GitHubが生成したタグアーカイブをダウンロードし、リンクや危険なパスがないことを確認します。
+第2段階はタグの形式、デフォルトブランチからの到達性、コミットトレーラー、リポジトリ内のバージョンを改めて検査します。その後、GitHubが生成したタグアーカイブをダウンロードし、リンクや危険なパスがないことを確認します。
 
 OBS向けのソース作成ジョブには秘密情報を渡しません。タグのコミット時刻を`SOURCE_DATE_EPOCH`に設定し、次の5ファイルを作ります。
 
@@ -100,7 +100,7 @@ OBSのプロジェクトは[`home:ymkthr:fcitx5-voice-ja`](https://build.opensus
 - `OBS_USERNAME`: `home:ymkthr:fcitx5-voice-ja/fcitx5-voice-ja`のソースを更新できるOBSユーザーです。
 - `OBS_PASSWORD`: そのユーザーのパスワードです。
 
-Environmentのdeployment branchesには`master`だけを許可します。承認を挟む場合はrequired reviewersも設定します。OBSの認証情報はRepository secretsへ重複して登録しないでください。ソース作成ジョブにはEnvironmentを指定していないため、この認証情報を読み取れません。
+Environmentのdeployment branchesには`main`と`master`だけを許可します。承認を挟む場合はrequired reviewersも設定します。OBSの認証情報はRepository secretsへ重複して登録しないでください。ソース作成ジョブにはEnvironmentを指定していないため、この認証情報を読み取れません。
 
 GitHubのIssues設定では、`release:major`、`release:minor`、`release:patch`の3ラベルを作ります。表記は完全一致させてください。
 
@@ -118,7 +118,7 @@ gh workflow run tag-release.yml -f pr_number="$PR_NUMBER"
 gh workflow run publish-release.yml -f tag="$TAG"
 ```
 
-第1段階の再実行は、既存のバージョンコミットを検出して同じタグを再送します。第2段階の再実行は、既存のGitHub Releaseを使い、OBSのソースに差分がある場合だけコミットします。タグや`master`をforce pushして復旧しないでください。
+第1段階の再実行は、既存のバージョンコミットを検出して同じタグを再送します。第2段階の再実行は、既存のGitHub Releaseを使い、OBSのソースに差分がある場合だけコミットします。タグやデフォルトブランチをforce pushして復旧しないでください。
 
 ## AURへの公開は手動で行う
 

@@ -2,7 +2,7 @@ name: Tag release
 
 on:
   pull_request_target:
-    branches: [master]
+    branches: [main, master]
     types: [closed]
   workflow_dispatch:
     inputs:
@@ -75,21 +75,21 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out trusted master
+      - name: Check out the trusted default branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: master
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
           persist-credentials: true
 
       - name: Reconcile the release commit and tag
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
           PR_NUMBER: ${{ needs.event-request.outputs.number || needs.manual-request.outputs.number }}
           MERGED: ${{ needs.event-request.outputs.merged || needs.manual-request.outputs.merged }}
           MERGE_SHA: ${{ needs.event-request.outputs.merge_sha || needs.manual-request.outputs.merge_sha }}
           LABELS_JSON: ${{ needs.event-request.outputs.labels || needs.manual-request.outputs.labels }}
-        shell: bash
         run: |
           set -euo pipefail
 
@@ -98,8 +98,10 @@ jobs:
             exit 1
           }
 
-          [[ $GITHUB_REF == refs/heads/master ]] ||
-            die "release workflow must run from master"
+          [[ $RELEASE_BRANCH == main || $RELEASE_BRANCH == master ]] ||
+            die "default branch must be main or master"
+          [[ $GITHUB_REF == "refs/heads/$RELEASE_BRANCH" ]] ||
+            die "release workflow must run from $RELEASE_BRANCH"
 
           trailer_values() {
             local commit=$1 key=$2
@@ -120,7 +122,7 @@ jobs:
             local candidates=() commit pr_values merge kind previous
             EXISTING_RELEASE=
             mapfile -t candidates < <(
-              git log origin/master --format=%H --fixed-strings \
+              git log "origin/$RELEASE_BRANCH" --format=%H --fixed-strings \
                 --grep="Release-PR: $PR_NUMBER"
             )
             for commit in "${candidates[@]}"; do
@@ -166,14 +168,14 @@ jobs:
           for attempt in 1 2 3 4 5; do
             echo "Release reconciliation attempt $attempt"
             git fetch --force --prune --prune-tags origin \
-              '+refs/heads/master:refs/remotes/origin/master' \
+              "+refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH" \
               '+refs/tags/*:refs/tags/*'
-            git checkout --detach --force origin/master
-            master_commit="$(git rev-parse origin/master)"
+            git checkout --detach --force "origin/$RELEASE_BRANCH"
+            branch_commit="$(git rev-parse "origin/$RELEASE_BRANCH")"
             git cat-file -e "$MERGE_SHA^{commit}" 2>/dev/null ||
               die "merge SHA $MERGE_SHA is not available"
-            git merge-base --is-ancestor "$MERGE_SHA" "$master_commit" ||
-              die "merge SHA $MERGE_SHA is not an ancestor of current master"
+            git merge-base --is-ancestor "$MERGE_SHA" "$branch_commit" ||
+              die "merge SHA $MERGE_SHA is not an ancestor of current $RELEASE_BRANCH"
 
             find_existing_release
             if [[ -n $EXISTING_RELEASE ]]; then
@@ -200,7 +202,7 @@ jobs:
               else
                 git tag "$release_tag" "$EXISTING_RELEASE"
                 if ! git push --atomic origin \
-                  "origin/master:refs/heads/master" \
+                  "origin/$RELEASE_BRANCH:refs/heads/$RELEASE_BRANCH" \
                   "refs/tags/$release_tag:refs/tags/$release_tag"; then
                   git tag -d "$release_tag"
                   release_tag=
@@ -252,7 +254,7 @@ jobs:
             git tag "$release_tag" "$release_commit"
 
             if git push --atomic origin \
-              "HEAD:refs/heads/master" \
+              "HEAD:refs/heads/$RELEASE_BRANCH" \
               "refs/tags/$release_tag:refs/tags/$release_tag"; then
               break
             fi
