@@ -26,7 +26,25 @@ fcitx5とPipeWireが動作している環境が前提です。
 paru -S fcitx5-voice-ja   # または yay -S fcitx5-voice-ja
 ```
 
-### debまたはrpmから
+### Debian 13またはFedora 43/44のリポジトリから
+
+Debian 13:
+
+```sh
+curl -fsSL https://download.opensuse.org/repositories/home:/ymkthr:/fcitx5-voice-ja/Debian_13/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/fcitx5-voice-ja.gpg
+echo "deb [signed-by=/etc/apt/keyrings/fcitx5-voice-ja.gpg] https://download.opensuse.org/repositories/home:/ymkthr:/fcitx5-voice-ja/Debian_13/ /" | sudo tee /etc/apt/sources.list.d/fcitx5-voice-ja.list
+sudo apt update && sudo apt install fcitx5-voice-ja
+```
+
+Fedora（`44`の部分は使っているバージョンに合わせます）:
+
+```sh
+sudo dnf install dnf5-plugins
+sudo dnf config-manager addrepo --from-repofile=https://download.opensuse.org/repositories/home:/ymkthr:/fcitx5-voice-ja/Fedora_44/home:ymkthr:fcitx5-voice-ja.repo
+sudo dnf install fcitx5-voice-ja
+```
+
+### debまたはrpmを自分でビルドする
 
 dockerまたはpodmanと`cargo`のあるマシンでパッケージをビルドしてインストールします。詳細は`packaging/README.md`を参照してください。
 

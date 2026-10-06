@@ -21,7 +21,7 @@ packaging/build.sh rpm                 # fedora:44
 ビルドはOBSと同じくネットワークなしで動きます。ビルド依存だけをネットワークありで入れた一時イメージを作り、その中で`--network none`でビルドします。
 ビルドに使う外部の入力は、事前に`packaging/cache/`へ用意してキャッシュします。sherpa-onnxのリリースアーカイブ、`lindera-ipadic`が本来ビルド中にダウンロードするIPADIC辞書（約13MB）、`cargo vendor`したクレート（`vendor.tar.xz`。`daemon/Cargo.lock`が更新されると作り直す）の3つです。
 デーモンのビルドにはRust 1.88以上が必要です。Debian trixieでは`rustc-web`と`cargo-web`を使い、それより古いRustしかないイメージではビルドできません。
-linderaを上げたときは、`deb/debian/rules`と`rpm/fcitx5-voice-ja.spec`にあるIPADICのキャッシュディレクトリ名（`<lindera-ipadicの版>-fmt<辞書形式の版>`）も合わせます。ずれているとオフラインのビルドがダウンロードを試みて失敗します。
+linderaを上げたときは、`deb/debian/rules`と`rpm/fcitx5-voice-ja.spec`にあるIPADICのキャッシュディレクトリ名（`<lindera-ipadicのバージョン>-fmt<辞書形式のバージョン>`）も合わせます。ずれているとオフラインのビルドがダウンロードを試みて失敗します。
 バージョンを上げるときは`daemon/Cargo.toml`、`fcitx5/CMakeLists.txt`、各PKGBUILDに加えて`deb/debian/changelog`と`rpm/fcitx5-voice-ja.spec`も揃えます。
 
 ビルドしたパッケージのインストールは通常どおりです。
@@ -35,7 +35,7 @@ sudo dnf install ./packaging/dist/fcitx5-voice-ja-0.4.1-1.fc44.x86_64.rpm
 
 ## AURへの公開手順
 
-1. `daemon/Cargo.toml`、`fcitx5/CMakeLists.txt`、`aur/PKGBUILD`の`pkgver`を同じ版に揃える。
+1. `daemon/Cargo.toml`、`fcitx5/CMakeLists.txt`、`aur/PKGBUILD`の`pkgver`を同じバージョンに揃える。
 2. masterに取り込んだ後、タグを打って送る。
 
    ```sh
@@ -72,4 +72,6 @@ OBSのビルドはネットワークを使えません。リリースのtarball�
 3. `osc results`ですべてのディストリが`succeeded`になるのを確かめる。
 
 Debian向けはOBSの`debtransform`が.dscからソースパッケージを組み立てます。`debtransform`はソースのtarballを1つしか受け付けないため、sherpa-onnx、`vendor.tar.xz`、IPADICは.dscの`DEBTRANSFORM-FILES`でツリーの最上位に置き、`debian/rules`がそこから展開します。
-プロジェクトのリポジトリは、Fedoraが`Fedora:<版>/update`、Debianが`Debian:13/security`と`Debian:13/update`を参照します。Debianの標準リポジトリだけではRustが1.88より古く、ビルドできません。
+プロジェクトのリポジトリは、Fedoraが`Fedora:<バージョン>/update`、Debianが`Debian:13/security`と`Debian:13/update`を参照します。Debianの標準リポジトリだけではRustが1.88より古く、ビルドできません。
+各リポジトリは`rebuild="local"`にしています。既定のままだと、ディストリ側の更新リポジトリが変わるたびに再ビルドが始まり、Fedoraではビルドが終わらないまま公開に進みません。
+OBSのFedora:44/updateは`gnome-srpm-macros`をバイナリなしで載せているため、プロジェクト設定（prjconf）で`Ignore: gnome-srpm-macros`を指定しています。
