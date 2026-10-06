@@ -1,0 +1,275 @@
+name: Tag release
+
+on:
+  pull_request_target:
+    branches: [main, master]
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Merged pull request number to recover
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  event-request:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-24.04
+    permissions: {}
+    outputs:
+      number: ${{ steps.request.outputs.number }}
+      merged: ${{ steps.request.outputs.merged }}
+      merge_sha: ${{ steps.request.outputs.merge_sha }}
+      labels: ${{ steps.request.outputs.labels }}
+    steps:
+      - id: request
+        name: Read trusted event metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -r '"number=\(.pull_request.number)",
+                 "merged=\(.pull_request.merged)",
+                 "merge_sha=\(.pull_request.merge_commit_sha // "")",
+                 "labels=\([.pull_request.labels[].name] | @json)"' \
+            "$GITHUB_EVENT_PATH" >>"$GITHUB_OUTPUT"
+
+  manual-request:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      number: ${{ steps.request.outputs.number }}
+      merged: ${{ steps.request.outputs.merged }}
+      merge_sha: ${{ steps.request.outputs.merge_sha }}
+      labels: ${{ steps.request.outputs.labels }}
+    steps:
+      - id: request
+        name: Fetch current pull request metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ $PR_NUMBER =~ ^[1-9][0-9]*$ ]] || {
+            echo "PR number must be a positive integer" >&2
+            exit 2
+          }
+          response="$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")"
+          jq -r '"number=\(.number)",
+                 "merged=\(.merged_at != null)",
+                 "merge_sha=\(.merge_commit_sha // "")",
+                 "labels=\([.labels[].name] | @json)"' \
+            <<<"$response" >>"$GITHUB_OUTPUT"
+
+  release:
+    needs: [event-request, manual-request]
+    if: >-
+      always() &&
+      ((github.event_name == 'pull_request_target' && needs.event-request.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && needs.manual-request.result == 'success'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the trusted default branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reconcile the release commit and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
+          PR_NUMBER: ${{ needs.event-request.outputs.number || needs.manual-request.outputs.number }}
+          MERGED: ${{ needs.event-request.outputs.merged || needs.manual-request.outputs.merged }}
+          MERGE_SHA: ${{ needs.event-request.outputs.merge_sha || needs.manual-request.outputs.merge_sha }}
+          LABELS_JSON: ${{ needs.event-request.outputs.labels || needs.manual-request.outputs.labels }}
+        run: |
+          set -euo pipefail
+
+          die() {
+            echo "$*" >&2
+            exit 1
+          }
+
+          [[ $RELEASE_BRANCH == main || $RELEASE_BRANCH == master ]] ||
+            die "default branch must be main or master"
+          [[ $GITHUB_REF == "refs/heads/$RELEASE_BRANCH" ]] ||
+            die "release workflow must run from $RELEASE_BRANCH"
+
+          trailer_values() {
+            local commit=$1 key=$2
+            git show -s --format=%B "$commit" |
+              git interpret-trailers --parse |
+              sed -n "s/^${key}: //p"
+          }
+
+          require_trailer() {
+            local commit=$1 key=$2
+            local values=()
+            mapfile -t values < <(trailer_values "$commit" "$key")
+            ((${#values[@]} == 1)) || die "$commit has ${#values[@]} $key trailers"
+            printf '%s\n' "${values[0]}"
+          }
+
+          find_existing_release() {
+            local candidates=() commit pr_values merge kind previous
+            EXISTING_RELEASE=
+            mapfile -t candidates < <(
+              git log "origin/$RELEASE_BRANCH" --format=%H --fixed-strings \
+                --grep="Release-PR: $PR_NUMBER"
+            )
+            for commit in "${candidates[@]}"; do
+              mapfile -t pr_values < <(trailer_values "$commit" Release-PR)
+              local matched=false value
+              for value in "${pr_values[@]}"; do
+                [[ $value == "$PR_NUMBER" ]] && matched=true
+              done
+              [[ $matched == true ]] || continue
+              ((${#pr_values[@]} == 1)) || die "$commit has duplicate Release-PR trailers"
+              merge="$(require_trailer "$commit" Release-Merge-SHA)"
+              kind="$(require_trailer "$commit" Release-Kind)"
+              previous="$(require_trailer "$commit" Release-Previous-Version)"
+              [[ $merge == "$MERGE_SHA" ]] || die "PR $PR_NUMBER was already released for another merge SHA"
+              [[ $kind == "$release_kind" ]] || die "PR $PR_NUMBER was already released with another kind"
+              [[ $previous =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+                die "$commit has an invalid Release-Previous-Version"
+              [[ -z $EXISTING_RELEASE ]] || die "PR $PR_NUMBER has more than one release commit"
+              EXISTING_RELEASE=$commit
+            done
+          }
+
+          if [[ $MERGED != true ]]; then
+            echo "PR $PR_NUMBER was not merged. No release is needed."
+            exit 0
+          fi
+          [[ $PR_NUMBER =~ ^[1-9][0-9]*$ ]] || die "invalid PR number"
+          [[ $MERGE_SHA =~ ^[0-9a-f]{40}$ ]] || die "invalid merge SHA"
+          release_kind="$(
+            jq -r '.[]' <<<"$LABELS_JSON" |
+              python3 packaging/release.py labels
+          )"
+          if [[ $release_kind == none ]]; then
+            echo "PR $PR_NUMBER has no release label. No release is needed."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          release_tag=
+          release_commit=
+          for attempt in 1 2 3 4 5; do
+            echo "Release reconciliation attempt $attempt"
+            git fetch --force --prune --prune-tags origin \
+              "+refs/heads/$RELEASE_BRANCH:refs/remotes/origin/$RELEASE_BRANCH" \
+              '+refs/tags/*:refs/tags/*'
+            git checkout --detach --force "origin/$RELEASE_BRANCH"
+            branch_commit="$(git rev-parse "origin/$RELEASE_BRANCH")"
+            git cat-file -e "$MERGE_SHA^{commit}" 2>/dev/null ||
+              die "merge SHA $MERGE_SHA is not available"
+            git merge-base --is-ancestor "$MERGE_SHA" "$branch_commit" ||
+              die "merge SHA $MERGE_SHA is not an ancestor of current $RELEASE_BRANCH"
+
+            find_existing_release
+            if [[ -n $EXISTING_RELEASE ]]; then
+              previous="$(require_trailer "$EXISTING_RELEASE" Release-Previous-Version)"
+              git merge-base --is-ancestor "$MERGE_SHA" "$EXISTING_RELEASE" ||
+                die "release commit does not contain merge SHA $MERGE_SHA"
+              git checkout --detach --force "$EXISTING_RELEASE"
+              verify_output="$(
+                python3 packaging/release.py verify \
+                  --previous-version "$previous" \
+                  --kind "$release_kind"
+              )"
+              version="$(sed -n 's/^version=//p' <<<"$verify_output")"
+              [[ -n $version ]] || die "release verification returned no version"
+              release_tag="v$version"
+              [[ $(git show -s --format=%s "$EXISTING_RELEASE") == "Release $release_tag" ]] ||
+                die "release commit subject does not match $release_tag"
+
+              if git show-ref --verify --quiet "refs/tags/$release_tag"; then
+                [[ $(git cat-file -t "refs/tags/$release_tag") == commit ]] ||
+                  die "$release_tag is not a lightweight tag"
+                [[ $(git rev-parse "refs/tags/$release_tag") == "$EXISTING_RELEASE" ]] ||
+                  die "$release_tag points at another commit"
+              else
+                git tag "$release_tag" "$EXISTING_RELEASE"
+                if ! git push --atomic origin \
+                  "origin/$RELEASE_BRANCH:refs/heads/$RELEASE_BRANCH" \
+                  "refs/tags/$release_tag:refs/tags/$release_tag"; then
+                  git tag -d "$release_tag"
+                  release_tag=
+                  continue
+                fi
+              fi
+              release_commit=$EXISTING_RELEASE
+              break
+            fi
+
+            tag_arguments=(--require-highest-tag)
+            while IFS= read -r repository_tag; do
+              if [[ $repository_tag =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+                tag_arguments+=(--tag "$repository_tag")
+              fi
+            done < <(git tag --list)
+            python3 packaging/release.py verify "${tag_arguments[@]}" >/dev/null
+            released_at="$(git show -s --format=%cI "$MERGE_SHA")"
+            bump_output="$(
+              python3 packaging/release.py bump \
+                --kind "$release_kind" \
+                --pr-number "$PR_NUMBER" \
+                --merge-sha "$MERGE_SHA" \
+                --released-at "$released_at" \
+                "${tag_arguments[@]}"
+            )"
+            previous="$(sed -n 's/^previous_version=//p' <<<"$bump_output")"
+            next="$(sed -n 's/^next_version=//p' <<<"$bump_output")"
+            release_tag="$(sed -n 's/^tag=//p' <<<"$bump_output")"
+            [[ -n $previous && -n $next && $release_tag == "v$next" ]] ||
+              die "release bump returned incomplete values"
+
+            git add -- \
+              daemon/Cargo.toml \
+              daemon/Cargo.lock \
+              fcitx5/CMakeLists.txt \
+              packaging/arch/PKGBUILD \
+              packaging/aur/PKGBUILD \
+              packaging/aur/.SRCINFO \
+              packaging/deb/debian/changelog \
+              packaging/rpm/fcitx5-voice-ja.spec
+            git commit \
+              -m "Release $release_tag" \
+              -m "Release-PR: $PR_NUMBER
+          Release-Merge-SHA: $MERGE_SHA
+          Release-Kind: $release_kind
+          Release-Previous-Version: $previous"
+            release_commit="$(git rev-parse HEAD)"
+            git tag "$release_tag" "$release_commit"
+
+            if git push --atomic origin \
+              "HEAD:refs/heads/$RELEASE_BRANCH" \
+              "refs/tags/$release_tag:refs/tags/$release_tag"; then
+              break
+            fi
+            git tag -d "$release_tag"
+            release_tag=
+            release_commit=
+          done
+
+          [[ -n $release_tag && -n $release_commit ]] ||
+            die "release did not converge after five attempts"
+          payload="$(
+            jq -n \
+              --arg tag "$release_tag" \
+              --arg release_commit "$release_commit" \
+              '{event_type: "release-tagged", client_payload: {tag: $tag, release_commit: $release_commit}}'
+          )"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/dispatches" --input - <<<"$payload"
+          echo "Dispatched $release_tag at $release_commit"
