@@ -24,7 +24,25 @@ fcitx5 and PipeWire must be running.
 paru -S fcitx5-voice-ja   # or: yay -S fcitx5-voice-ja
 ```
 
-### From a deb or rpm
+### From the Debian 13 or Fedora 43/44 repository
+
+Debian 13:
+
+```sh
+curl -fsSL https://download.opensuse.org/repositories/home:/ymkthr:/fcitx5-voice-ja/Debian_13/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/fcitx5-voice-ja.gpg
+echo "deb [signed-by=/etc/apt/keyrings/fcitx5-voice-ja.gpg] https://download.opensuse.org/repositories/home:/ymkthr:/fcitx5-voice-ja/Debian_13/ /" | sudo tee /etc/apt/sources.list.d/fcitx5-voice-ja.list
+sudo apt update && sudo apt install fcitx5-voice-ja
+```
+
+Fedora (replace `44` with your release):
+
+```sh
+sudo dnf install dnf5-plugins
+sudo dnf config-manager addrepo --from-repofile=https://download.opensuse.org/repositories/home:/ymkthr:/fcitx5-voice-ja/Fedora_44/home:ymkthr:fcitx5-voice-ja.repo
+sudo dnf install fcitx5-voice-ja
+```
+
+### Building a deb or rpm yourself
 
 Build the package on a machine with docker or podman and `cargo`, then install it. See `packaging/README.md` for details.
 

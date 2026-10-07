@@ -93,6 +93,10 @@ OBSのプロジェクトは[`home:ymkthr:fcitx5-voice-ja`](https://build.opensus
 
 プロジェクトのリポジトリは、Fedoraが`Fedora:<バージョン>/update`、Debianが`Debian:13/security`と`Debian:13/update`を参照します。Debianの標準リポジトリだけではRustが1.88より古く、ビルドできません。
 
+各リポジトリは`rebuild="local"`にしています。既定のままだと、ディストリ側の更新リポジトリが変わるたびに再ビルドが始まり、Fedoraではビルドが終わらないまま公開に進みません。
+
+OBSのFedora:44/updateは`gnome-srpm-macros`をバイナリなしで載せているため、プロジェクト設定（prjconf）で`Ignore: gnome-srpm-macros`を指定しています。
+
 ## GitHubのEnvironmentとラベルを初回だけ設定する
 
 リポジトリのSettingsで`release`というEnvironmentを作ります。次のEnvironment secretsを登録してください。
