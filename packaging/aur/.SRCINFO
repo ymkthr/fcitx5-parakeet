@@ -1,6 +1,6 @@
 pkgbase = fcitx5-voice-ja
 	pkgdesc = Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet
-	pkgver = 0.4.1
+	pkgver = 0.4.2
 	pkgrel = 1
 	url = https://github.com/ymkthr/fcitx5-voice-ja
 	install = fcitx5-voice-ja.install
@@ -22,7 +22,7 @@ pkgbase = fcitx5-voice-ja
 	replaces = fcitx5-parakeet
 	options = !debug
 	options = !lto
-	source = fcitx5-voice-ja-0.4.1.tar.gz::https://github.com/ymkthr/fcitx5-voice-ja/archive/refs/tags/v0.4.1.tar.gz
+	source = fcitx5-voice-ja-0.4.2.tar.gz::https://github.com/ymkthr/fcitx5-voice-ja/archive/refs/tags/v0.4.2.tar.gz
 	source = sherpa-onnx-v1.13.7-linux-x64-shared-no-tts.tar.bz2::https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.7/sherpa-onnx-v1.13.7-linux-x64-shared-no-tts.tar.bz2
 	sha256sums = SKIP
 	sha256sums = e5abe50fae5e25ad6b70bc74b51984ccea77df2571f211833b572fcc0d1c3bef

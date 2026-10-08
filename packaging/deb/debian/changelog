@@ -1,3 +1,9 @@
+fcitx5-voice-ja (0.4.2-1) unstable; urgency=medium
+
+  * Release 0.4.2 from PR #17.
+
+ -- ymkthr <ymkthr@users.noreply.github.com>  Thu, 08 Oct 2026 13:39:51 +0000
+
 fcitx5-voice-ja (0.4.1-1) unstable; urgency=medium
 
   * Ship third-party copyright notices.

@@ -1,6 +1,6 @@
 # Maintainer: ymkthr <https://github.com/ymkthr>
 pkgname=fcitx5-voice-ja
-pkgver=0.4.1
+pkgver=0.4.2
 pkgrel=1
 pkgdesc="Offline Japanese and English speech input for fcitx5 using NVIDIA Parakeet"
 arch=(x86_64)
