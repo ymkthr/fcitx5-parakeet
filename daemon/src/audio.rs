@@ -32,14 +32,36 @@ enum Cmd {
 }
 
 #[derive(Default)]
+enum Sink {
+    #[default]
+    Idle,
+    Capturing(Arc<CaptureSink>),
+    Lost,
+}
+
+impl Sink {
+    fn stop(&mut self) {
+        if matches!(self, Sink::Capturing(_)) {
+            *self = Sink::Idle;
+        }
+    }
+}
+
+#[derive(Default)]
 struct Shared {
-    sink: Mutex<Option<Arc<CaptureSink>>>,
+    sink: Mutex<Sink>,
 }
 
 struct CaptureSink {
     pcm: Mutex<Vec<i16>>,
     first: Mutex<Option<oneshot::Sender<()>>>,
     max_samples: usize,
+}
+
+impl CaptureSink {
+    fn close(&self) {
+        self.first.lock().take();
+    }
 }
 
 pub struct Capture {
@@ -51,6 +73,7 @@ pub struct Capture {
 /// One bounded capture session.
 pub struct Recording {
     sink: Arc<CaptureSink>,
+    shared: Arc<Shared>,
     first: Option<oneshot::Receiver<()>>,
 }
 
@@ -91,6 +114,11 @@ impl Recording {
     pub fn take_pcm(&self) -> Vec<i16> {
         std::mem::take(&mut *self.sink.pcm.lock())
     }
+
+    /// True once the capture's PipeWire connection is lost; no more samples come.
+    pub fn lost(&self) -> bool {
+        matches!(*self.shared.sink.lock(), Sink::Lost)
+    }
 }
 
 impl Capture {
@@ -119,6 +147,11 @@ impl Capture {
         }
     }
 
+    /// False once the PipeWire connection is lost; `start` fails from then on.
+    pub fn alive(&self) -> bool {
+        !matches!(*self.shared.sink.lock(), Sink::Lost)
+    }
+
     /// Starts delivering PCM; the stream is activated on the PipeWire thread.
     pub fn start(&self, max_samples: usize) -> Result<Recording> {
         let (first_tx, first_rx) = oneshot::channel();
@@ -127,20 +160,27 @@ impl Capture {
             first: Mutex::new(Some(first_tx)),
             max_samples,
         });
-        *self.shared.sink.lock() = Some(Arc::clone(&sink));
+        {
+            let mut slot = self.shared.sink.lock();
+            if matches!(*slot, Sink::Lost) {
+                bail!("PipeWire connection lost");
+            }
+            *slot = Sink::Capturing(Arc::clone(&sink));
+        }
         if self.cmd.send(Cmd::SetActive(true)).is_err() {
-            *self.shared.sink.lock() = None;
+            self.shared.sink.lock().stop();
             bail!("PipeWire thread is gone");
         }
         Ok(Recording {
             sink,
+            shared: Arc::clone(&self.shared),
             first: Some(first_rx),
         })
     }
 
     /// Stops delivering PCM and deactivates the stream.
     pub fn stop(&self) {
-        *self.shared.sink.lock() = None;
+        self.shared.sink.lock().stop();
         if self.cmd.send(Cmd::SetActive(false)).is_err() {
             warn!("PipeWire thread is gone; cannot deactivate stream");
         }
@@ -172,6 +212,25 @@ fn run_loop(
     let mainloop = pw::main_loop::MainLoopRc::new(None).context("pw_main_loop_new")?;
     let context = pw::context::ContextRc::new(&mainloop, None).context("pw_context_new")?;
     let core = context.connect_rc(None).context("connecting to PipeWire")?;
+    // A lost server is reported only as an error on the core; the stream just
+    // turns unconnected, as it also does whenever `relink` reconnects it.
+    let _core_errors = {
+        let shared = Arc::clone(&shared);
+        let mainloop = mainloop.clone();
+        core.add_listener_local()
+            .error(move |id, _seq, res, message| {
+                if id != pw::core::PW_ID_CORE {
+                    return;
+                }
+                warn!("PipeWire connection lost ({res}: {message}); the next capture reconnects");
+                let previous = std::mem::replace(&mut *shared.sink.lock(), Sink::Lost);
+                if let Sink::Capturing(sink) = previous {
+                    sink.close();
+                }
+                mainloop.quit();
+            })
+            .register()
+    };
 
     let mut props = properties! {
         *pw::keys::MEDIA_TYPE => "Audio",
@@ -189,7 +248,7 @@ fn run_loop(
     let stream =
         pw::stream::StreamRc::new(core.clone(), "voice-jad", props).context("pw_stream_new")?;
     let user_data = UserData {
-        shared,
+        shared: Arc::clone(&shared),
         ready: Some(ready),
         first_chunk_logged: false,
     };
@@ -229,7 +288,7 @@ fn run_loop(
             };
             let end = (offset + size).min(bytes.len());
             let sink_guard = ud.shared.sink.lock();
-            let Some(sink) = sink_guard.as_ref() else {
+            let Sink::Capturing(sink) = &*sink_guard else {
                 return;
             };
             let mut pcm = sink.pcm.lock();
@@ -332,6 +391,9 @@ fn run_loop(
     });
 
     mainloop.run();
+    if matches!(*shared.sink.lock(), Sink::Lost) {
+        bail!("PipeWire connection lost");
+    }
     Ok(())
 }
 

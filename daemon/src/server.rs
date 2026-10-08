@@ -20,8 +20,9 @@
 //!                       their second half (or, past max_seconds, the quietest
 //!                       moment) is transcribed like STOP while the capture
 //!                       continues.
-//!                       `ENDED` means the capture reached max_recording_seconds
-//!                       and ended itself; its rest came as the last COMMIT.
+//!                       `ENDED` means the capture ended itself on reaching
+//!                       max_recording_seconds or losing its PipeWire
+//!                       connection; its rest came as the last COMMIT.
 //!                       No event follows ENDED or the STOP/CANCEL reply.
 //!   STOP [context]   -> `OK <lang> <text>` for the audio not yet committed (text
 //!                       may be empty), after every COMMIT. context replaces
@@ -290,7 +291,7 @@ impl Daemon {
 
     fn capture_start(&self) -> Result<Recording> {
         let mut slot = self.capture.lock();
-        if slot.is_none() {
+        if !slot.as_ref().is_some_and(Capture::alive) {
             *slot = Some(Capture::spawn(CaptureConfig {
                 sample_rate: self.cfg.sample_rate,
                 target: self.cfg.target.clone(),
@@ -406,8 +407,6 @@ impl Daemon {
         }
     }
 
-    /// Drives one capture: previews it, commits segments while it runs, and
-    /// finishes it on STOP, CANCEL or max_recording_seconds.
     async fn run(self: Arc<Self>, mut s: Session, mut end_rx: oneshot::Receiver<End>) {
         let period = match self.cfg.partial_interval_ms {
             0 => CHECK_INTERVAL,
@@ -443,7 +442,7 @@ impl Daemon {
                     }
                     Step::Partial(_) => {}
                     Step::Segment(started) => segment = Some(started),
-                    Step::Limit => break None,
+                    Step::End => break None,
                 },
             }
         };
@@ -452,10 +451,6 @@ impl Daemon {
             return;
         }
         if end.is_none() {
-            info!(
-                "capture reached max_recording_seconds ({:.0}s); ending it",
-                self.cfg.max_recording_seconds
-            );
             let active = self.active.lock();
             if active.as_ref().is_some_and(|a| a.session == s.id) {
                 self.capture_stop();
@@ -514,8 +509,6 @@ impl Daemon {
         }
     }
 
-    /// One preview period: ends the capture at max_recording_seconds, starts
-    /// a segment when one is due, or else re-transcribes the preview.
     async fn tick(
         self: &Arc<Self>,
         s: &Session,
@@ -524,10 +517,18 @@ impl Daemon {
         idle: bool,
     ) -> Step {
         ticks.tick().await;
+        if s.recording.lost() {
+            warn!("microphone connection lost; ending the capture");
+            return Step::End;
+        }
         let len = s.recording.len();
         let rate = self.cfg.sample_rate as f32;
         if (s.drained + len) as f32 >= self.cfg.max_recording_seconds * rate {
-            return Step::Limit;
+            info!(
+                "capture reached max_recording_seconds ({:.0}s); ending it",
+                self.cfg.max_recording_seconds
+            );
+            return Step::End;
         }
         if idle && s.segmenting && len >= self.limits.commit_after {
             match self.start_segment(s).await {
@@ -855,7 +856,7 @@ enum Step {
     Idle,
     Partial(String),
     Segment(Segment),
-    Limit,
+    End,
 }
 
 /// Returns the listening socket and whether we own the filesystem path.
